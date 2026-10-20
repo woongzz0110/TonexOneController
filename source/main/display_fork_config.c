@@ -38,11 +38,11 @@ static const char *TAG = "app_display_fork_cfg";
 
 enum ConfigTabs
 {
-    CONFIG_TAB_BT,
-    CONFIG_TAB_MIDI,
-    CONFIG_TAB_MISC,
-    CONFIG_TAB_WIFI,
-    CONFIG_TAB_COUNT
+    CFG_TAB_BT,
+    CFG_TAB_MIDI,
+    CFG_TAB_MISC,
+    CFG_TAB_WIFI,
+    CFG_TAB_COUNT
 };
 
 enum FieldKinds
@@ -66,28 +66,28 @@ typedef struct
 // 문구는 업스트림 웹 Config 화면과 맞춘다
 static const tConfigField Fields[] =
 {
-    {CONFIG_ITEM_BT_MODE,                   CONFIG_TAB_BT,   FIELD_DROPDOWN, "Bluetooth Mode",         "Disabled\nCentral\nPeripheral", 0, 0},
-    {CONFIG_ITEM_MV_CHOC_ENABLE,            CONFIG_TAB_BT,   FIELD_SWITCH,   "M-Vave Chocolate",       NULL, 0, 0},
-    {CONFIG_ITEM_XV_MD1_ENABLE,             CONFIG_TAB_BT,   FIELD_SWITCH,   "X-Vive MD1",             NULL, 0, 0},
-    {CONFIG_ITEM_CUSTOM_BT_ENABLE,          CONFIG_TAB_BT,   FIELD_SWITCH,   "Custom BT Device",       NULL, 0, 0},
-    {CONFIG_ITEM_ENABLE_BT_MIDI_CC,         CONFIG_TAB_BT,   FIELD_SWITCH,   "Midi CC on BT",          NULL, 0, 0},
+    {CONFIG_ITEM_BT_MODE,                   CFG_TAB_BT,   FIELD_DROPDOWN, "Bluetooth Mode",         "Disabled\nCentral\nPeripheral", 0, 0},
+    {CONFIG_ITEM_MV_CHOC_ENABLE,            CFG_TAB_BT,   FIELD_SWITCH,   "M-Vave Chocolate",       NULL, 0, 0},
+    {CONFIG_ITEM_XV_MD1_ENABLE,             CFG_TAB_BT,   FIELD_SWITCH,   "X-Vive MD1",             NULL, 0, 0},
+    {CONFIG_ITEM_CUSTOM_BT_ENABLE,          CFG_TAB_BT,   FIELD_SWITCH,   "Custom BT Device",       NULL, 0, 0},
+    {CONFIG_ITEM_ENABLE_BT_MIDI_CC,         CFG_TAB_BT,   FIELD_SWITCH,   "Midi CC on BT",          NULL, 0, 0},
 
-    {CONFIG_ITEM_MIDI_ENABLE,               CONFIG_TAB_MIDI, FIELD_SWITCH,   "Wired Midi",             NULL, 0, 0},
-    {CONFIG_ITEM_MIDI_CHANNEL,              CONFIG_TAB_MIDI, FIELD_STEPPER,  "Midi Channel",           NULL, 1, 16},
+    {CONFIG_ITEM_MIDI_ENABLE,               CFG_TAB_MIDI, FIELD_SWITCH,   "Wired Midi",             NULL, 0, 0},
+    {CONFIG_ITEM_MIDI_CHANNEL,              CFG_TAB_MIDI, FIELD_STEPPER,  "Midi Channel",           NULL, 1, 16},
 
-    {CONFIG_ITEM_TOGGLE_BYPASS,             CONFIG_TAB_MISC, FIELD_SWITCH,   "Toggle Bypass",          NULL, 0, 0},
-    {CONFIG_ITEM_LOOP_AROUND,               CONFIG_TAB_MISC, FIELD_SWITCH,   "Preset/Bank Loop",       NULL, 0, 0},
-    {CONFIG_ITEM_SAVE_PRESET_TO_SLOT,       CONFIG_TAB_MISC, FIELD_DROPDOWN, "Preset Saves To",        "Current slot\nSlot A (Dual)\nSlot B (Dual)\nSlot C (Stomp)", 0, 0},
-    {CONFIG_ITEM_SCREEN_ROTATION,           CONFIG_TAB_MISC, FIELD_DROPDOWN, "Screen Rotation",        "0 degrees\n180 degrees", 0, 0},
-    {CONFIG_ITEM_ENABLE_HIGHER_TOUCH_SENS,  CONFIG_TAB_MISC, FIELD_SWITCH,   "High Touch Sensitivity", NULL, 0, 0},
-    {CONFIG_ITEM_DISABLE_BPM_FLASHER,       CONFIG_TAB_MISC, FIELD_SWITCH,   "Disable BPM Flasher",    NULL, 0, 0},
+    {CONFIG_ITEM_TOGGLE_BYPASS,             CFG_TAB_MISC, FIELD_SWITCH,   "Toggle Bypass",          NULL, 0, 0},
+    {CONFIG_ITEM_LOOP_AROUND,               CFG_TAB_MISC, FIELD_SWITCH,   "Preset/Bank Loop",       NULL, 0, 0},
+    {CONFIG_ITEM_SAVE_PRESET_TO_SLOT,       CFG_TAB_MISC, FIELD_DROPDOWN, "Preset Saves To",        "Current slot\nSlot A (Dual)\nSlot B (Dual)\nSlot C (Stomp)", 0, 0},
+    {CONFIG_ITEM_SCREEN_ROTATION,           CFG_TAB_MISC, FIELD_DROPDOWN, "Screen Rotation",        "0 degrees\n180 degrees", 0, 0},
+    {CONFIG_ITEM_ENABLE_HIGHER_TOUCH_SENS,  CFG_TAB_MISC, FIELD_SWITCH,   "High Touch Sensitivity", NULL, 0, 0},
+    {CONFIG_ITEM_DISABLE_BPM_FLASHER,       CFG_TAB_MISC, FIELD_SWITCH,   "Disable BPM Flasher",    NULL, 0, 0},
 
-    {CONFIG_ITEM_WIFI_MODE,                 CONFIG_TAB_WIFI, FIELD_DROPDOWN, "WiFi Mode",              "Access Point Timed\nStation\nAccess Point", 0, 0},
-    {CONFIG_ITEM_WIFI_TX_POWER,             CONFIG_TAB_WIFI, FIELD_DROPDOWN, "WiFi Transmit Power",    "25%\n50%\n75%\n100%", 0, 0},
+    {CONFIG_ITEM_WIFI_MODE,                 CFG_TAB_WIFI, FIELD_DROPDOWN, "WiFi Mode",              "Access Point Timed\nStation\nAccess Point", 0, 0},
+    {CONFIG_ITEM_WIFI_TX_POWER,             CFG_TAB_WIFI, FIELD_DROPDOWN, "WiFi Transmit Power",    "25%\n50%\n75%\n100%", 0, 0},
 };
 #define FIELD_COUNT                 (sizeof(Fields) / sizeof(Fields[0]))
 
-static const char* TabNames[CONFIG_TAB_COUNT] = {"BT", "MIDI", "Misc", "Wi-Fi"};
+static const char* TabNames[CFG_TAB_COUNT] = {"BT", "MIDI", "Misc", "Wi-Fi"};
 
 typedef struct
 {
@@ -97,14 +97,16 @@ typedef struct
 
 typedef struct
 {
-    lv_obj_t* tabs[CONFIG_TAB_COUNT];
+    lv_obj_t* tabs[CFG_TAB_COUNT];
     tFieldWidgets widgets[FIELD_COUNT];
     uint32_t loaded[FIELD_COUNT];
     uint32_t edited[FIELD_COUNT];
-    lv_obj_t* save_labels[CONFIG_TAB_COUNT];
-    lv_obj_t* save_buttons[CONFIG_TAB_COUNT];
+    lv_obj_t* save_labels[CFG_TAB_COUNT];
+    lv_obj_t* save_buttons[CFG_TAB_COUNT];
     lv_obj_t* bt_names;
     lv_obj_t* wifi_names;
+    lv_obj_t* wifi_warning;
+    uint8_t ssid_empty;
     void (*close_screen)(void);
     uint8_t saving;
 } tConfigUI;
@@ -140,7 +142,7 @@ static void refresh_save_bars(void)
         snprintf(text, sizeof(text), "%d change%s not saved", (int)count, (count == 1) ? "" : "s");
     }
 
-    for (uint8_t loop = 0; loop < CONFIG_TAB_COUNT; loop++)
+    for (uint8_t loop = 0; loop < CFG_TAB_COUNT; loop++)
     {
         lv_label_set_text(ConfigUI.save_labels[loop], text);
         lv_obj_set_style_text_color(ConfigUI.save_labels[loop], lv_color_hex((count == 0) ? FORK_COLOR_HINT : FORK_COLOR_ORANGE), 0);
@@ -172,10 +174,15 @@ static void show_field_value(uint8_t index)
 
         case FIELD_DROPDOWN:
         {
-            // 범위 밖 값(손상·새 버전 값)은 고르지 않은 채로 둔다: 사용자가 바꾸지 않으면 그대로 저장된다
+            // 모르는 값(손상, 롤백 전 새 펌웨어가 쓴 값)은 "Other"로 보인다. 사용자가 고르지 않으면 그 값이 그대로 남는다.
             if (value < lv_dropdown_get_option_cnt(widgets->control))
             {
+                lv_dropdown_set_text(widgets->control, NULL);
                 lv_dropdown_set_selected(widgets->control, (uint16_t)value);
+            }
+            else
+            {
+                lv_dropdown_set_text(widgets->control, "Other");
             }
         } break;
 
@@ -203,6 +210,23 @@ static void show_names(void)
     control_get_config_item_string(CONFIG_ITEM_MDNS_NAME, second);
     snprintf(text, sizeof(text), "SSID: %s   mDNS: %s\nSSID, password and mDNS name are set on the web page.", first[0] ? first : "-", second[0] ? second : "-");
     lv_label_set_text(ConfigUI.wifi_names, text);
+    ConfigUI.ssid_empty = (first[0] == 0);
+}
+
+// 웹과 같이 막지는 않는다: Station에 SSID가 없으면 재부팅 뒤 AP가 열리지 않아 웹에 들어갈 수 없다(보드 Wi-Fi 탭으로 되돌릴 수는 있다)
+static void refresh_wifi_warning(void)
+{
+    uint8_t station = 0;
+
+    for (uint8_t loop = 0; loop < FIELD_COUNT; loop++)
+    {
+        if (Fields[loop].item == CONFIG_ITEM_WIFI_MODE)
+        {
+            station = (ConfigUI.edited[loop] == WIFI_MODE_STATION);
+        }
+    }
+
+    fork_ui_set_visible(ConfigUI.wifi_warning, station && ConfigUI.ssid_empty);
 }
 
 void fork_config_load(void)
@@ -215,6 +239,7 @@ void fork_config_load(void)
     }
 
     show_names();
+    refresh_wifi_warning();
     refresh_save_bars();
 }
 
@@ -222,6 +247,7 @@ static void field_changed(uint8_t index, uint32_t value)
 {
     ConfigUI.edited[index] = value;
     show_field_value(index);
+    refresh_wifi_warning();
     refresh_save_bars();
 }
 
@@ -399,11 +425,11 @@ static lv_obj_t* create_tab(lv_obj_t* tabview, uint8_t tab_index)
 
 void fork_config_create_tabs(lv_obj_t* tabview)
 {
-    uint8_t rows[CONFIG_TAB_COUNT] = {0};
+    uint8_t rows[CFG_TAB_COUNT] = {0};
 
     memset((void*)&ConfigUI, 0, sizeof(ConfigUI));
 
-    for (uint8_t loop = 0; loop < CONFIG_TAB_COUNT; loop++)
+    for (uint8_t loop = 0; loop < CFG_TAB_COUNT; loop++)
     {
         ConfigUI.tabs[loop] = create_tab(tabview, loop);
     }
@@ -438,14 +464,19 @@ void fork_config_create_tabs(lv_obj_t* tabview)
         }
     }
 
-    ConfigUI.bt_names = fork_ui_label(ConfigUI.tabs[CONFIG_TAB_BT], "", 12, 6 + (rows[CONFIG_TAB_BT] * ROW_HEIGHT) + 8, &lv_font_montserrat_20, FORK_COLOR_HINT);
-    ConfigUI.wifi_names = fork_ui_label(ConfigUI.tabs[CONFIG_TAB_WIFI], "", 12, 6 + (rows[CONFIG_TAB_WIFI] * ROW_HEIGHT) + 8, &lv_font_montserrat_20, FORK_COLOR_HINT);
+    ConfigUI.bt_names = fork_ui_label(ConfigUI.tabs[CFG_TAB_BT], "", 12, 6 + (rows[CFG_TAB_BT] * ROW_HEIGHT) + 8, &lv_font_montserrat_20, FORK_COLOR_HINT);
+    ConfigUI.wifi_names = fork_ui_label(ConfigUI.tabs[CFG_TAB_WIFI], "", 12, 6 + (rows[CFG_TAB_WIFI] * ROW_HEIGHT) + 8, &lv_font_montserrat_20, FORK_COLOR_HINT);
 
-    // 이름이 길면 줄 끝을 줄임표로 자른다(아래 저장 줄을 밀어내지 않게)
-    lv_obj_set_width(ConfigUI.bt_names, 760);
+    // 이름이 길면 줄 끝을 줄임표로 자른다(아래 저장 줄을 밀어내지 않게). 줄임표는 높이가 고정돼야 찍힌다.
+    lv_obj_set_size(ConfigUI.bt_names, 760, lv_font_get_line_height(&lv_font_montserrat_20));
     lv_label_set_long_mode(ConfigUI.bt_names, LV_LABEL_LONG_DOT);
     lv_obj_set_width(ConfigUI.wifi_names, 760);
     lv_label_set_long_mode(ConfigUI.wifi_names, LV_LABEL_LONG_WRAP);
+
+    ConfigUI.wifi_warning = fork_ui_label(ConfigUI.tabs[CFG_TAB_WIFI], "Station mode has no SSID yet: after the reboot the web page cannot be reached.",
+                                          12, 6 + (rows[CFG_TAB_WIFI] * ROW_HEIGHT) + 66, &lv_font_montserrat_20, FORK_COLOR_ORANGE);
+    lv_obj_set_width(ConfigUI.wifi_warning, 760);
+    lv_label_set_long_mode(ConfigUI.wifi_warning, LV_LABEL_LONG_WRAP);
 
     fork_config_load();
 }

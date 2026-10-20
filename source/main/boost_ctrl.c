@@ -70,7 +70,7 @@ static esp_err_t read_volume(float* volume_db)
 }
 
 /****************************************************************************
-* PARAMETERS:  volume_db: optional, current volume when known
+* PARAMETERS:  volume_db: 볼륨을 알 때 현재 값을 받는다(NULL 가능)
 * RETURN:      BoostStates
 *****************************************************************************/
 uint8_t boost_ctrl_get_state(float* volume_db)

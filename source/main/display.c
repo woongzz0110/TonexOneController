@@ -1995,7 +1995,7 @@ void display_init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2CMutex
     // init toast
     ui_init_toast();
 
-    // fork: 부스트 배지·설정 탭을 실행 중에 만든다. ui_init() 뒤, display 태스크 시작 전이어야 한다 (display_fork.c)
+    // fork: 포크 화면 요소를 실행 중에 만든다. ui_init() 뒤, display 태스크 시작 전이어야 한다 (display_fork.c)
     display_fork_init();
 
 #if CONFIG_TONEX_CONTROLLER_DISPLAY_FULL_UI

@@ -46,7 +46,6 @@ static const char *TAG = "app_display_fork_setup";
 #define BUTTON_HIGHLIGHT_MSEC       1500
 #define USB_TEXT_SIZE               (6 * 1024)
 #define DEFAULT_PRESET_COUNT        20
-#define BT_MODE_CENTRAL             1
 
 enum BoostSteppers
 {
@@ -249,11 +248,18 @@ static uint8_t preset_limit(const tChocConfig* choc)
 static void refresh_choc_status(void)
 {
     uint8_t bt_ready = control_get_config_item_int(CONFIG_ITEM_MV_CHOC_ENABLE) && (control_get_config_item_int(CONFIG_ITEM_BT_MODE) == BT_MODE_CENTRAL);
+    uint8_t link = choc_exec_get_link_state();
 
-    if (choc_exec_is_chocolate_connected())
+    if (link == CHOC_LINK_CONNECTED)
     {
         lv_label_set_text(Setup.choc_status, "Connected");
         lv_obj_set_style_text_color(Setup.choc_status, lv_color_hex(FORK_COLOR_OK), 0);
+        lv_label_set_text(Setup.choc_detail, "");
+    }
+    else if (link == CHOC_LINK_CONNECTING)
+    {
+        lv_label_set_text(Setup.choc_status, "Connecting...");
+        lv_obj_set_style_text_color(Setup.choc_status, lv_color_hex(FORK_COLOR_HINT), 0);
         lv_label_set_text(Setup.choc_detail, "");
     }
     else

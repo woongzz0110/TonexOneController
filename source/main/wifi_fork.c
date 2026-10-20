@@ -104,7 +104,7 @@ static void build_fork_config_json(char* buffer, size_t size)
     json_gen_obj_set_float(&jstr, "BOOST_ON", boost_db10_to_db(boost.OnDb10));
     json_gen_obj_set_int(&jstr, "BOOST_BOOT_OFF", boost.OffAtBoot);
 
-    json_gen_obj_set_int(&jstr, "CHOC_CONNECTED", choc_exec_is_chocolate_connected());
+    json_gen_obj_set_int(&jstr, "CHOC_STATE", choc_exec_get_link_state());
     // 업스트림 Bluetooth 설정: 이게 꺼져 있거나 Central이 아니면 초콜릿에 아예 연결하지 않는다
     json_gen_obj_set_int(&jstr, "BT_CHOC_EN", control_get_config_item_int(CONFIG_ITEM_MV_CHOC_ENABLE));
     json_gen_obj_set_int(&jstr, "BT_MODE", control_get_config_item_int(CONFIG_ITEM_BT_MODE));

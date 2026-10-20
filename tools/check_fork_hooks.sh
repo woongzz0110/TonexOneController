@@ -25,6 +25,7 @@ check $M/usb_tonex_one_plus.c   'boost_ctrl_on_volume_report();'
 check $M/usb_tonex_plug.c       'boost_ctrl_on_volume_report();'
 check $M/usb_tonex.c            'boost_ctrl_on_volume_report();'
 check $M/midi_control.c         'choc_exec_on_ble_connecting('
+check $M/midi_control.c         'choc_exec_on_ble_opened();'
 check $M/midi_control.c         'choc_exec_on_ble_disconnected();' 2
 check $M/midi_control.c         'choc_exec_handle_ble_midi('
 check $M/display.c              'display_fork_init();'

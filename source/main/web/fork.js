@@ -23,8 +23,11 @@
     const CHOC_ACTION_PRESET_SELECT = 7;
     const CHOC_BUTTONS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-    // 업스트림 Bluetooth 설정 값
+    // 업스트림 Bluetooth 설정 값(control.h BT_MODE_*)
     const BT_MODE_CENTRAL = 1;
+    // choc_exec.h ChocLinkStates
+    const CHOC_STATE_CONNECTING = 1;
+    const CHOC_STATE_CONNECTED = 2;
 
     const BOOST_MIN_DB = -40;
     const BOOST_MAX_DB = 3;
@@ -56,13 +59,15 @@
         boost: { dirty: false, loaded: false, note: 'fork_boost_note', keys: /^BOOST_(OFF|ON|BOOT_OFF)$/, snapshot: '' },
         choc: { dirty: false, loaded: false, note: 'fork_choc_note', keys: /^(TRANSLATE|BTN\d_(ACT|PRM))$/, snapshot: '' }
     };
-    let savingPage = null;
+    // 한 연결 안에서 저장 결과(FORKCONFIGRESULT)는 보낸 순서대로 온다
+    const savingPages = [];
     let maxPresets = 20;
     let otaMaxSize = 0;
     let otaPlatform = '';
     let otaAvailable = false;
     let otaPending = false;
     let uploading = false;
+    let uploadDone = false;
     let pendingTimer = null;
     let menuAdded = false;
     const highlightTimers = {};
@@ -322,7 +327,7 @@
         return Math.abs(value * 2 - Math.round(value * 2)) < 1e-6;
     }
 
-    // returns null if OK, else the message to show
+    // 문제가 없으면 null, 있으면 보여줄 문구
     function validateBoost() {
         const boost = readBoostInputs();
         const note = document.getElementById('fork_boost_note');
@@ -356,7 +361,7 @@
         }
 
         const boost = readBoostInputs();
-        savingPage = 'boost';
+        savingPages.push('boost');
         sendWS({
             CMD: 'SETFORKCONFIG',
             BOOST_OFF: boost.off,
@@ -418,7 +423,7 @@
             message[`BTN${index}_PRM`] = preset;
         }
 
-        savingPage = 'choc';
+        savingPages.push('choc');
         sendWS(message);
     }
 
@@ -434,13 +439,16 @@
     function updateChocolateStatus(data) {
         const status = document.getElementById('fork_choc_status');
 
-        if (!('CHOC_CONNECTED' in data)) {
+        if (!('CHOC_STATE' in data)) {
             return;
         }
 
-        if (data['CHOC_CONNECTED']) {
+        if (data['CHOC_STATE'] === CHOC_STATE_CONNECTED) {
             status.textContent = '연결됨';
             status.className = 'fork-ok';
+        } else if (data['CHOC_STATE'] === CHOC_STATE_CONNECTING) {
+            status.textContent = '연결 중…';
+            status.className = 'fork-muted';
         } else if (!data['BT_CHOC_EN'] || data['BT_MODE'] !== BT_MODE_CENTRAL) {
             status.textContent = '연결 안 됨 — Config > Bluetooth에서 Bluetooth Mode를 Central로, Chocolate Series를 켜야 연결합니다.';
             status.className = 'fork-note';
@@ -478,15 +486,20 @@
     }
 
     function applySaveResult(result) {
-        const page = savingPage || 'choc';
-        const ok = (result === 0);
+        const page = savingPages.shift();
 
-        savingPage = null;
+        // 이 화면이 보낸 저장이 아니면(다른 연결이 끊긴 뒤 남은 응답 등) 어느 페이지에도 붙이지 않는다
+        if (!page) {
+            return;
+        }
+
         document.getElementById(pages[page].note).textContent = RESULT_TEXT[result] || ('저장 실패 (' + result + ')');
-        if (ok) {
-            // 새 설정은 보드가 모든 웹 화면에 다시 보내준다
+        if (result === 0) {
             pages[page].dirty = false;
             setToast((page === 'boost') ? 'Boost 설정 저장됨' : 'Chocolate 설정 저장됨');
+
+            // 보드의 설정 푸시가 이 결과보다 먼저 왔으면 손대는 중이라 건너뛰었으므로, 저장된 값을 다시 받아 기준을 맞춘다
+            sendWS({ CMD: 'GETFORKCONFIG' });
         }
     }
 
@@ -576,6 +589,21 @@
         updateUploadButton();
     }
 
+    // 업스트림은 웹소켓이 열릴 때만 GETMODELLERDATA를 요청한다. 업로드 성공 뒤에 오면 재부팅 뒤 다시 붙은 것이다.
+    // 새 펌웨어가 확정되기 전에는 GETFWINFO의 PENDING이 버튼을 계속 막는다.
+    function onReconnected() {
+        if (!uploadDone) {
+            return;
+        }
+
+        uploadDone = false;
+        finishUpload();
+        document.getElementById('fork_fw_note').textContent = '보드가 다시 연결됐습니다.';
+        if (document.getElementById('ForkFirmware').classList.contains('active')) {
+            sendWS({ CMD: 'GETFWINFO' });
+        }
+    }
+
     async function uploadFirmware() {
         const file = document.getElementById('fork_fw_file').files[0];
         const note = document.getElementById('fork_fw_note');
@@ -620,6 +648,8 @@
         };
         request.onload = () => {
             if (request.status === 200) {
+                // 보드가 재부팅해 웹소켓이 다시 붙을 때까지 버튼을 막아 둔다(onReconnected)
+                uploadDone = true;
                 setProgress(100);
                 note.textContent = '완료. 보드가 재부팅합니다. 약 20초 뒤 다시 연결됩니다(AP 모드는 Wi-Fi 재연결 필요).';
             } else {
@@ -696,7 +726,10 @@
         upstreamProcessReturnCmd(data);
 
         if (data['CMD'] === 'GETMODELLERDATA') {
+            // 끊긴 연결로 보낸 저장의 결과는 오지 않는다
+            savingPages.length = 0;
             addMenuItems();
+            onReconnected();
         } else if (data['CMD'] === 'GETCONFIG' && !menuAdded) {
             addMenuItems();
         }

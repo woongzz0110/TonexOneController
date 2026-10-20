@@ -37,8 +37,8 @@ limitations under the License.
 
 static const char *TAG = "app_choc_exec";
 
-// BT 콜백 태스크가 쓰고 웹 태스크가 읽는다
-static volatile uint8_t ChocolateConnected = 0;
+// BT 콜백 태스크가 쓰고 화면·웹 태스크가 읽는다(ChocLinkStates)
+static volatile uint8_t LinkState = CHOC_LINK_NONE;
 
 static void show_result(const char* text)
 {
@@ -215,7 +215,8 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
     tChocConfig config;
     tChocDecodeResult result;
 
-    if (!ChocolateConnected)
+    // 연결 대상이 초콜릿인지는 스캔 매칭 때 이름으로 정해진다(notify는 연결된 뒤에만 온다)
+    if (LinkState == CHOC_LINK_NONE)
     {
         return 0;
     }
@@ -245,14 +246,14 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
 }
 
 // 연결 시도가 실패할 때마다 끊김 연결점이 다시 불리므로 바뀔 때만 화면·웹에 알린다
-static void set_connected(uint8_t connected)
+static void set_link_state(uint8_t state)
 {
-    if (ChocolateConnected == connected)
+    if (LinkState == state)
     {
         return;
     }
 
-    ChocolateConnected = connected;
+    LinkState = state;
 #if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
     UI_RefreshForkSettings();
 #endif
@@ -264,15 +265,23 @@ void choc_exec_on_ble_connecting(const char* device_name)
     uint8_t chocolate = choc_map_is_chocolate_name(device_name);
 
     ESP_LOGI(TAG, "BLE connecting to %s (chocolate %d)", device_name, (int)chocolate);
-    set_connected(chocolate);
+    set_link_state(chocolate ? CHOC_LINK_CONNECTING : CHOC_LINK_NONE);
+}
+
+void choc_exec_on_ble_opened(void)
+{
+    if (LinkState == CHOC_LINK_CONNECTING)
+    {
+        set_link_state(CHOC_LINK_CONNECTED);
+    }
 }
 
 void choc_exec_on_ble_disconnected(void)
 {
-    set_connected(0);
+    set_link_state(CHOC_LINK_NONE);
 }
 
-uint8_t choc_exec_is_chocolate_connected(void)
+uint8_t choc_exec_get_link_state(void)
 {
-    return ChocolateConnected;
+    return LinkState;
 }

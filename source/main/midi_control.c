@@ -870,6 +870,9 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
             memcpy(gl_profile_tab.remote_bda, p_data->open.remote_bda, 6);
             gl_profile_tab.conn_id = p_data->open.conn_id;
 
+            // fork: 초콜릿 번역 계층 연결 추적 (choc_exec.c)
+            choc_exec_on_ble_opened();
+
             ESP_LOGI(GATTC_TAG, "ESP_GATTC_OPEN_EVT conn_id %d, if %d, status %d, mtu %d", p_data->open.conn_id, gattc_if, p_data->open.status, p_data->open.mtu);
             ESP_LOGI(GATTC_TAG, "REMOTE BDA:");
             ESP_LOG_BUFFER_HEX(GATTC_TAG, p_data->open.remote_bda, sizeof(esp_bd_addr_t));

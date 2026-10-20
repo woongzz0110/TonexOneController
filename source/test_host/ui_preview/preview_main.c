@@ -8,9 +8,11 @@
 #include "ui.h"
 #include "screens.h"
 #include "display_fork.h"
+#include "display_fork_setup.h"
 #include "usb_desc_info.h"
 #include "choc_map.h"
 #include "fork_settings.h"
+#include "choc_exec.h"
 #include "control.h"
 #include "preview.h"
 
@@ -258,12 +260,12 @@ int main(int argc, char** argv)
     lv_dropdown_close(dropdown);
 
     // 10) 초콜릿이 안 붙었고 BT 설정에서 꺼져 있을 때의 안내
-    PreviewChocConnected = 0;
+    PreviewChocLink = CHOC_LINK_NONE;
     preview_set_config(CONFIG_ITEM_MV_CHOC_ENABLE, 0);
     UI_RefreshForkSettings();
     capture("10_setup_choc_not_connected.png");
     preview_set_config(CONFIG_ITEM_MV_CHOC_ENABLE, 1);
-    PreviewChocConnected = 1;
+    PreviewChocLink = CHOC_LINK_CONNECTED;
     UI_RefreshForkSettings();
 
     // 11~13) 업스트림 설정: BT · MIDI · Misc
@@ -287,6 +289,19 @@ int main(int argc, char** argv)
     lv_obj_clean(lv_layer_top());
     show_setup_tab(TAB_INFO);
     capture("16_setup_info.png");
+
+    // 17) SSID 없이 Station: 경고 줄. 다시 열면 저장 안 한 변경은 버려지므로 저장된 값으로 Station을 둔다
+    PreviewSsid = "";
+    preview_set_config(CONFIG_ITEM_WIFI_MODE, WIFI_MODE_STATION);
+    fork_setup_open();
+    show_setup_tab(TAB_WIFI);
+    capture("17_setup_wifi_station_no_ssid.png");
+
+    // 18) 이 펌웨어가 모르는 선택지 값(롤백 전 새 펌웨어가 쓴 값 등)은 "Other"
+    preview_set_config(CONFIG_ITEM_SCREEN_ROTATION, 2);
+    fork_setup_open();
+    show_setup_tab(TAB_MISC);
+    capture("18_setup_misc_unknown_value.png");
 
     return 0;
 }

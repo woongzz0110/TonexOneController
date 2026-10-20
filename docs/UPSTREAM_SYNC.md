@@ -36,7 +36,7 @@ IDF_PRESET=WS43B idf.py build
 | `main/usb_comms.c` | 장치 오픈 뒤 `usb_desc_info_capture()` | Setup > Info 디스크립터 요약 | 설정 디스크립터를 얻은 직후로 |
 | `main/usb_comms.c` | 장치 제거 시 `boost_ctrl_on_usb_disconnected()` | 부스트 상태 초기화 | `control_set_usb_status(0)` 옆으로 |
 | `main/usb_tonex_one.c`, `usb_tonex_one_plus.c`, `usb_tonex_plug.c`, `usb_tonex.c` | 글로벌 볼륨 저장 뒤 `boost_ctrl_on_volume_report()` | 배지·웹 갱신 | `TONEX_GLOBAL_MASTER_VOLUME` 값을 쓰는 곳 뒤로 |
-| `main/midi_control.c` | 스캔 매칭 `choc_exec_on_ble_connecting()`, 열기 실패·연결 끊김 `choc_exec_on_ble_disconnected()` | 초콜릿 연결 추적 | 연결 대상 이름을 아는 지점으로 |
+| `main/midi_control.c` | 스캔 매칭 `choc_exec_on_ble_connecting()`, 열기 성공 `choc_exec_on_ble_opened()`, 열기 실패·연결 끊김 `choc_exec_on_ble_disconnected()` | 초콜릿 연결 추적(연결 중/연결됨 표시) | 연결 대상 이름을 아는 지점, `ESP_GATTC_OPEN_EVT` 성공·실패 지점으로 |
 | `main/midi_control.c` | `ESP_GATTC_NOTIFY_EVT`에서 `choc_exec_handle_ble_midi()` 실패 시에만 `midi_helper_process_incoming_data()` | 초콜릿 번역 | 업스트림 수신 호출을 감싸는 형태를 유지 |
 | `main/display.c` | `UI_ELEMENT_FORK`, `UI_PostForkUpdate()`, 분기, 파라미터 갱신 뒤 `display_fork_on_parameters_refreshed()`, `display_init()`의 `display_fork_init()` | 배지·알림·Setup 화면 | `ui_init()` 뒤에 `display_fork_init()`이 와야 함 |
 | `main/wifi_config.c` | `EVENT_SYNC_FORK`·`wifi_request_fork_push()`, 명령 분기 끝 `else` → `wifi_fork_handle_ws_command()`, `http_server_init()`의 핸들러 수·스택 증가와 `wifi_fork_register_handlers()` | 웹 명령·푸시·`/fork.js`·`/update` | 핸들러 등록은 와일드카드 `/*`보다 먼저 |

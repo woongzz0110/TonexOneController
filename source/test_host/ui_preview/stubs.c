@@ -9,6 +9,7 @@
 #include "boost.h"
 #include "boost_ctrl.h"
 #include "choc_map.h"
+#include "choc_exec.h"
 #include "fork_settings.h"
 #include "display_fork.h"
 #include "control.h"
@@ -18,7 +19,8 @@
 uint8_t PreviewSupported = 1;
 uint8_t PreviewVolumeKnown = 1;
 float PreviewVolume = -2.0f;
-uint8_t PreviewChocConnected = 1;
+uint8_t PreviewChocLink = CHOC_LINK_CONNECTED;
+const char* PreviewSsid = "HomeWiFi";
 
 static tBoostConfig Boost;
 static tChocConfig Choc;
@@ -133,7 +135,7 @@ static const uint8_t SampleDevice[18] =
 
 static const uint8_t SampleConfig[] =
 {
-    // config (wTotalLength filled below)
+    // 구성 디스크립터 (wTotalLength는 아래에서 채운다)
     9, 0x02, 0, 0, 4, 1, 0, 0x80, 250,
     // CDC: IAD + control + data
     8, 0x0B, 0, 2, 0x02, 0x02, 0x01, 0,
@@ -241,7 +243,7 @@ void control_get_config_item_string(uint32_t item, char* name)
     {
         case CONFIG_ITEM_BT_CUSTOM_NAME:    strcpy(name, "MyPedal"); break;
         case CONFIG_ITEM_BT_PERIPHERAL_NAME: strcpy(name, "TonexBT"); break;
-        case CONFIG_ITEM_WIFI_SSID:         strcpy(name, "HomeWiFi"); break;
+        case CONFIG_ITEM_WIFI_SSID:         strcpy(name, PreviewSsid); break;
         case CONFIG_ITEM_MDNS_NAME:         strcpy(name, "tonex"); break;
         default:                            name[0] = 0; break;
     }
@@ -259,9 +261,9 @@ void control_save_user_data(uint8_t reboot)
 
 // ---- choc_exec / boost_ctrl / ota_update ----
 
-uint8_t choc_exec_is_chocolate_connected(void)
+uint8_t choc_exec_get_link_state(void)
 {
-    return PreviewChocConnected;
+    return PreviewChocLink;
 }
 
 esp_err_t boost_ctrl_toggle(uint8_t* new_state, float* target_db)

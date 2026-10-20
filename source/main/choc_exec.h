@@ -24,9 +24,18 @@ limitations under the License.
 // 1이면 여기서 처리했으니 midi_helper로 보내지 말 것
 uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length);
 
+// 웹 프로토콜 값(fork.js CHOC_STATE_*)
+enum ChocLinkStates
+{
+    CHOC_LINK_NONE,
+    CHOC_LINK_CONNECTING,       // 스캔에서 초콜릿 이름을 찾아 연결을 시작함
+    CHOC_LINK_CONNECTED
+};
+
 // BLE Central 연결 상태 연결점 (midi_control.c)
 void choc_exec_on_ble_connecting(const char* device_name);
+void choc_exec_on_ble_opened(void);
 void choc_exec_on_ble_disconnected(void);
-uint8_t choc_exec_is_chocolate_connected(void);
+uint8_t choc_exec_get_link_state(void);
 
 void choc_exec_run_button(uint8_t button);

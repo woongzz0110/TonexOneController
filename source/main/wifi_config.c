@@ -1447,7 +1447,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
                     }
                     else
                     {
-                        // fork: Footswitch·펌웨어·USB 정보 명령 (wifi_fork.c)
+                        // fork: 포크 웹 명령 (wifi_fork.c)
                         wifi_fork_handle_ws_command(req, &pWebConfig->jctx, str_val);
                     }
                 }

@@ -122,7 +122,9 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
   초콜릿을 다른 모드로 업스트림 방식 그대로 쓰거나, 문제가 생겼을 때 원래 동작과 비교하려고 둔다.
 - 웹소켓 명령(서버 `wifi_fork.c`): `GETFORKCONFIG`, `SETFORKCONFIG`(메시지에 있는 항목만 바꾼다 → `FORKCONFIGRESULT` 0=OK, 1=부스트 범위, 2=단위, 3=OFF≥ON, 4=버튼 동작·프리셋 번호 범위),
   `CHOCTEST`, `SETBOOST`(0/1/2=토글), 푸시 `GETFORKCONFIG`(설정·초콜릿 연결이 바뀌면 모든 화면에), `BOOSTSTATE`, `CHOCEVENT`.
-  `GETFORKCONFIG`에는 업스트림 Bluetooth 설정 `BT_CHOC_EN`·`BT_MODE`도 실어 연결 안내에 쓴다.
+  `GETFORKCONFIG`에는 초콜릿 연결 상태 `CHOC_STATE`(0 없음, 1 연결 중 = 스캔에서 이름을 찾아 여는 중, 2 연결됨 = 열기 성공)와
+  업스트림 Bluetooth 설정 `BT_CHOC_EN`·`BT_MODE`도 실어 연결 안내에 쓴다. 번역은 연결 중부터 켠다(notify는 연결된 뒤에만 온다).
+- 웹 저장 결과는 보낸 순서대로 받아 그 페이지에만 붙이고, 성공하면 설정을 한 번 더 받아 "보드에서 바뀌었다" 판단 기준을 맞춘다.
 - 변경 파일: `choc_map.c/.h`, `choc_exec.c/.h`, `wifi_fork.c/.h`, `web/fork.js`(새 파일), 연결: `midi_control.c`(4곳), `wifi_config.c`(5곳), `web/index.html`(1줄).
 
 ### 3-3. 메인 화면 표시 (계획서 3)
@@ -151,6 +153,8 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
     `control_get/set_config_item_int()`를 쓰므로 업스트림 파일은 고치지 않는다. 웹처럼 바꾼 값을 모았다가 **Save & Reboot**(확인 창)에서
     항목을 보내고 250ms 뒤 `control_save_user_data(1)`. 저장하지 않고 닫으면 저장·버리기를 묻는다.
     글자 입력(SSID·암호·BT 이름·mDNS)은 현재 값만 보여주고 웹에서 바꾼다. 풋스위치 CC 표, Preset/PC Map, LCD 타이밍(잘못 넣으면 보드로 되돌릴 수 없음)은 웹 전용.
+    모르는 선택지 값(손상, 롤백 전 새 펌웨어가 쓴 값)은 "Other"로 보이고 고르지 않으면 그대로 남는다.
+    SSID 없이 Station을 고르면 경고만 띄운다(웹과 같이 막지 않음, 재부팅 뒤 보드 Wi-Fi 탭으로 되돌릴 수 있다).
   - **Info**: 펌웨어 버전·빌드·실행 슬롯·업데이트 방법, USB 디스크립터 요약(튜너 1단계).
 - Boost·Choc 값은 바로 적용되고(재부팅 없음) NVS 저장은 마지막 변경 1초 뒤 한 번 한다(+/- 연타가 플래시 쓰기 연타가 되지 않게, 화면이 멈추지 않게).
   웹과 같은 설정(`fork_settings`)을 공유하고 서로 바뀌면 상대 화면도 갱신된다.
