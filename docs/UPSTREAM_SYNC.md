@@ -47,7 +47,10 @@ IDF_PRESET=WS43B idf.py build
 
 ## 업스트림 변경 유형별 확인
 
-- **EEZ UI 재생성** (`ui_generated_800x480land/`): 생성 코드는 그대로 받는다. 메인 화면 배치가 바뀌면 `display_fork.c`의 배지 좌표(Bank 상자 아래)가 겹치지 않는지 보드에서 본다.
+- **EEZ UI 재생성** (`ui_generated_800x480land/`): 생성 코드는 그대로 받는다. 메인 화면 배치가 바뀌면 `display_fork.c`의 배지 좌표(Bank 상자 아래)가 겹치지 않는지 본다.
+  보드 없이 먼저 보려면 `WS43B_FORK` 빌드 뒤 `source/test_host/ui_preview/run_preview.sh [출력 폴더]`를 돌린다.
+  업스트림 생성 UI와 `display_fork.c`를 맥에서 그대로 실행해 메인 화면·FSW·USB 탭을 PNG로 남긴다(스킨 그림은 빈 채로 나온다).
+  미리보기만 빌드가 실패하면 대개 업스트림 헤더가 새 ESP 헤더를 끌어온 것이므로 `ui_preview/stubs/`에 빈 헤더를 더한다(펌웨어 문제가 아니다).
   `objects.ui_touch_gesture_container`, `objects.ui_settings_tab_view` 이름이 바뀌면 빌드가 실패하므로 바로 드러난다.
 - **웹 `script.js`**: `fork.js`는 전역 `processReturnCmd`, `sendWS`, `setToast`, `modellerType`과 메뉴의 "Config" 드롭다운 문구에 기대고 있다. 이름이 바뀌면 웹 Footswitch·Firmware 메뉴가 사라진다.
   `index.html`을 브라우저로 열어 Config 메뉴에 두 항목이 있는지 본다.

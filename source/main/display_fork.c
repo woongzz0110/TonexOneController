@@ -552,9 +552,10 @@ static lv_obj_t* create_switch(lv_obj_t* parent, lv_coord_t x, lv_coord_t y, lv_
 {
     lv_obj_t* sw = lv_switch_create(parent);
 
+    // 업스트림 설정 탭 스위치와 같은 색: 켜지면 어두운 바탕에 주황 손잡이
     lv_obj_set_pos(sw, x, y);
     lv_obj_set_size(sw, 80, 35);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(COLOR_ORANGE), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(sw, lv_color_hex(COLOR_DARK_ORANGE), LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(sw, lv_color_hex(0x674D35), LV_PART_KNOB | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(sw, lv_color_hex(COLOR_ORANGE), LV_PART_KNOB | LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw, cb, LV_EVENT_VALUE_CHANGED, NULL);

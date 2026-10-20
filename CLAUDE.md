@@ -17,6 +17,7 @@ IDF_PRESET=WS43B_FORK idf.py build     # 결과: source/build/fork_ws43b/
 IDF_PRESET=WS43B idf.py build          # 업스트림 프리셋 확인용: source/build_ws43b/
 python3 ../tools/flash_fork_ws43b.py /dev/cu.usbmodemXXXX   # USB 설치 (보드 Boot 버튼을 누른 채 연결)
 ./test_host/run_tests.sh               # 하드웨어 없이 도는 규칙 테스트
+./test_host/ui_preview/run_preview.sh [출력 폴더]   # 4.3B 화면(배지·알림·FSW/USB 탭)을 PNG로 (WS43B_FORK 빌드 뒤)
 ```
 
 - 펌웨어 업데이트 방법(USB 첫 설치, 이후 Wi-Fi): `docs/FIRMWARE_UPDATE.md`
