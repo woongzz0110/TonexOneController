@@ -38,17 +38,29 @@
     const BOOST_STATE_TEXT = ['BOOST OFF', 'BOOST ON', 'CUSTOM', 'BOOST --'];
     const BOOST_STATE_CLASS = ['fork-badge-off', 'fork-badge-on', 'fork-badge-custom', 'fork-badge-unknown'];
 
+    // wifi_fork.c ChocConfigResults 순서
     const RESULT_TEXT = [
         '저장했습니다. 바로 적용됩니다.',
         '부스트 값은 -40 ~ +3 dB 범위여야 합니다.',
         '부스트 값은 0.5 dB 단위여야 합니다.',
-        '부스트 OFF 값은 ON 값보다 작아야 합니다.'
+        '부스트 OFF 값은 ON 값보다 작아야 합니다.',
+        '버튼 동작이나 프리셋 번호가 범위를 벗어났습니다.'
     ];
+
+    // ESP-IDF 앱 이미지 배치: esp_image_header_t(24) + esp_image_segment_header_t(8) 뒤에 esp_app_desc_t
+    const IMAGE_MAGIC = 0xE9;
+    const IMAGE_CHIP_ID_OFFSET = 12;
+    const CHIP_ID_ESP32S3 = 9;
+    const APP_DESC_OFFSET = 32;
+    const APP_DESC_MAGIC = 0xABCD5432;
+    const APP_PROJECT_NAME_OFFSET = APP_DESC_OFFSET + 48;
+    const APP_PROJECT_NAME = 'TonexController';
 
     let formDirty = false;
     let configLoaded = false;
     let maxPresets = 20;
     let otaMaxSize = 0;
+    let otaPlatform = '';
     let menuAdded = false;
     const highlightTimers = {};
 
@@ -145,7 +157,8 @@
 
                     <h6 class="selected_text">Wi-Fi 업데이트</h6>
                     <p class="fork-muted">빌드 결과의 <b>TonexController.bin</b> 하나만 올립니다(부트로더·스킨은 그대로).
-                       업로드가 끝나면 보드가 재부팅되고, 새 펌웨어가 30초 안에 정상 동작하지 않으면 이전 펌웨어로 되돌아갑니다.</p>
+                       업로드가 끝나면 보드가 재부팅됩니다. 새 펌웨어가 켜진 뒤 30초 안에 다시 재부팅되면(오류 리셋, 전원 껐다 켜기)
+                       이전 펌웨어로 되돌아가고, 30초가 지나면 새 펌웨어로 확정됩니다.</p>
                     <input type="file" class="form-control" id="fork_fw_file" accept=".bin">
                     <div class="progress mt-2" style="height: 22px;">
                         <div class="progress-bar bg-warning" id="fork_fw_progress" role="progressbar" style="width: 0%">0%</div>
@@ -388,6 +401,7 @@
 
     function applyFirmwareInfo(data) {
         otaMaxSize = data['MAX_SIZE'] || 0;
+        otaPlatform = data['PLATFORM'] || '';
 
         let text = `${data['PROJECT']} ${data['VERSION']} (빌드 ${data['BUILD_DATE']} ${data['BUILD_TIME']}, IDF ${data['IDF']}), 실행 중 슬롯 ${data['RUNNING']}`;
         if (data['OTA']) {
@@ -405,7 +419,41 @@
         bar.textContent = percent + '%';
     }
 
-    function uploadFirmware() {
+    function containsAscii(bytes, text) {
+        const first = text.charCodeAt(0);
+        outer: for (let i = bytes.indexOf(first); i >= 0 && i <= bytes.length - text.length; i = bytes.indexOf(first, i + 1)) {
+            for (let j = 1; j < text.length; j++) {
+                if (bytes[i + j] !== text.charCodeAt(j)) {
+                    continue outer;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // 보드도 같은 검사를 하지만, 업로드 도중 거절되면 브라우저는 사유 없이 "연결 끊김"만 보게 되므로 먼저 본다
+    async function checkImage(file) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const view = new DataView(bytes.buffer);
+
+        if (bytes.length < APP_PROJECT_NAME_OFFSET + 32 || bytes[0] !== IMAGE_MAGIC) {
+            return 'ESP32 앱 이미지가 아닙니다. 빌드 결과의 TonexController.bin 을 고르세요(bootloader·partition·skins 파일이 아님).';
+        }
+        if (view.getUint16(IMAGE_CHIP_ID_OFFSET, true) !== CHIP_ID_ESP32S3) {
+            return 'ESP32-S3용 이미지가 아닙니다.';
+        }
+        const name = String.fromCharCode(...bytes.subarray(APP_PROJECT_NAME_OFFSET, APP_PROJECT_NAME_OFFSET + 32)).replace(/\0.*$/, '');
+        if (view.getUint32(APP_DESC_OFFSET, true) !== APP_DESC_MAGIC || name !== APP_PROJECT_NAME) {
+            return 'Tonex Controller 펌웨어가 아닙니다.';
+        }
+        if (otaPlatform && !containsAscii(bytes, `TNXCTL-OTA-PLATFORM=${otaPlatform};`)) {
+            return `${otaPlatform} 포크 OTA 빌드(WS43B_FORK) 이미지가 아닙니다. 업스트림·다른 보드용 이미지는 Wi-Fi로 올릴 수 없습니다.`;
+        }
+        return null;
+    }
+
+    async function uploadFirmware() {
         const file = document.getElementById('fork_fw_file').files[0];
         const note = document.getElementById('fork_fw_note');
 
@@ -417,8 +465,10 @@
             note.textContent = `파일이 너무 큽니다 (${file.size} > ${otaMaxSize} 바이트). 앱 이미지가 맞는지 확인하세요.`;
             return;
         }
-        if (!/^TonexController.*\.bin$/i.test(file.name) &&
-            !confirm(`파일 이름이 ${file.name} 입니다. TonexController.bin 이 맞습니까?`)) {
+
+        const problem = await checkImage(file);
+        if (problem) {
+            note.textContent = problem;
             return;
         }
 
@@ -442,7 +492,7 @@
             }
         };
         request.onerror = () => {
-            note.textContent = '업로드 중 연결이 끊겼습니다. 보드는 기존 펌웨어로 계속 동작합니다.';
+            note.textContent = '업로드 중 연결이 끊겼습니다(Wi-Fi 끊김이거나 보드가 이미지를 거절함). 보드는 기존 펌웨어로 계속 동작합니다.';
             document.getElementById('fork_fw_upload').disabled = false;
         };
 

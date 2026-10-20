@@ -15,6 +15,7 @@ limitations under the License.
 
 */
 
+#include <stdio.h>
 #include <string.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -38,14 +39,14 @@ static const char *TAG = "app_ota_update";
 #define OTA_HEADER_SIZE             (sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t))
 #define OTA_RESTART_DELAY_US        (1500 * 1000)
 
-// 새 이미지가 이 시간 동안 웹 서버까지 정상으로 떠 있으면 확정한다.
-// 그 전에 리셋되면 부트로더가 이전 이미지로 되돌린다(롤백). 웹 서버가 안 뜨는 이미지도 되돌아가므로 OTA 경로가 살아남는다.
+// 새 이미지는 웹 서버를 띄운 뒤 이 시간 안에 리셋되지 않으면 확정된다. 그 전에 리셋되면 부트로더가 이전 이미지로 되돌린다.
+// 멈춤(hang)만으로는 리셋되지 않으므로 "정상 동작"까지 보장하지는 않는다.
 #define OTA_CONFIRM_DELAY_US        (30 * 1000 * 1000)
 
 // 업로드된 이미지 안에 이 문자열이 있어야 받아들인다: 같은 플랫폼용 OTA 지원 빌드인지 확인하는 표식
 static const char PlatformTag[] = "TNXCTL-OTA-PLATFORM=" CONFIG_TONEX_FORK_OTA_PLATFORM_ID ";";
+_Static_assert((sizeof(PlatformTag) - 1) <= OTA_TAG_SCAN_MAX_TAG, "CONFIG_TONEX_FORK_OTA_PLATFORM_ID is too long");
 
-static volatile uint8_t UpdateInProgress = 0;
 static esp_timer_handle_t ConfirmTimer = NULL;
 
 typedef struct
@@ -56,13 +57,6 @@ typedef struct
     tOtaTagScan tag;
 } tOtaScan;
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void confirm_timer_cb(void* arg)
 {
     esp_ota_img_states_t state;
@@ -75,24 +69,13 @@ static void confirm_timer_cb(void* arg)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void restart_timer_cb(void* arg)
 {
     esp_restart();
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
 * RETURN:      NULL if OK, else the reason
-* NOTES:
 *****************************************************************************/
 static const char* check_header(const uint8_t* data)
 {
@@ -102,48 +85,59 @@ static const char* check_header(const uint8_t* data)
 
     if (image->magic != ESP_IMAGE_HEADER_MAGIC)
     {
-        return "Not an ESP32 app image (use TonexController.bin)";
+        return "ESP32 앱 이미지가 아닙니다 (TonexController.bin 을 고르세요)";
     }
 
     if (image->chip_id != CONFIG_IDF_FIRMWARE_CHIP_ID)
     {
-        return "Image is for a different chip";
+        return "다른 칩용 이미지입니다";
     }
 
-    if (app->magic_word != ESP_APP_DESC_MAGIC_WORD)
+    if ((app->magic_word != ESP_APP_DESC_MAGIC_WORD) || (strncmp(app->project_name, running->project_name, sizeof(app->project_name)) != 0))
     {
-        return "Image has no app description";
-    }
-
-    if (strncmp(app->project_name, running->project_name, sizeof(app->project_name)) != 0)
-    {
-        return "Image is not a Tonex Controller firmware";
+        return "Tonex Controller 펌웨어가 아닙니다";
     }
 
     return NULL;
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
+* NOTES:       본문을 다 받기 전에 거절할 때는 ESP_FAIL을 돌려 소켓을 닫는다.
+*              ESP_OK면 httpd가 남은 수 MB를 작은 조각으로 끝까지 읽어 버리느라 그동안 다른 요청을 못 받는다.
 *****************************************************************************/
-static esp_err_t send_error(httpd_req_t* req, const char* status, const char* message)
+static esp_err_t send_error(httpd_req_t* req, const char* status, const char* message, uint8_t body_left)
 {
     ESP_LOGE(TAG, "Update failed: %s", message);
     httpd_resp_set_status(req, status);
-    httpd_resp_set_type(req, "text/plain");
-    return httpd_resp_sendstr(req, message);
+    httpd_resp_set_type(req, "text/plain; charset=utf-8");
+
+    if (body_left)
+    {
+        httpd_resp_set_hdr(req, "Connection", "close");
+    }
+
+    httpd_resp_sendstr(req, message);
+
+    return body_left ? ESP_FAIL : ESP_OK;
+}
+
+static const char* begin_problem(esp_err_t err)
+{
+    static char text[80];
+
+    if (err == ESP_ERR_OTA_ROLLBACK_INVALID_STATE)
+    {
+        // 직전 업데이트가 아직 확정 전(PENDING_VERIFY)이면 다음 슬롯에 쓸 수 없다
+        return "직전 업데이트가 아직 확정되지 않았습니다. 켜진 뒤 30초가 지나면 다시 올리세요";
+    }
+
+    snprintf(text, sizeof(text), "업데이트를 시작하지 못했습니다 (%s)", esp_err_to_name(err));
+    return text;
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       body is the raw app image (application/octet-stream)
+* NOTES:       본문은 앱 이미지 그대로(application/octet-stream).
+*              httpd 태스크는 하나라 이 핸들러가 동시에 두 번 돌지 않는다.
 *****************************************************************************/
 static esp_err_t ota_post_handler(httpd_req_t* req)
 {
@@ -156,39 +150,34 @@ static esp_err_t ota_post_handler(httpd_req_t* req)
     esp_err_t err;
     int timeouts = 0;
 
-    if (UpdateInProgress)
-    {
-        return send_error(req, "409 Conflict", "Another update is running");
-    }
-
     if (target == NULL)
     {
-        return send_error(req, "500 Internal Server Error", "No OTA partition (flash the OTA build over USB first)");
+        return send_error(req, "500 Internal Server Error", "OTA 파티션이 없습니다 (먼저 USB로 WS43B_FORK 빌드를 설치)", remaining > 0);
     }
 
     if ((req->content_len < OTA_HEADER_SIZE) || (req->content_len > target->size))
     {
-        return send_error(req, "400 Bad Request", "Image size is not valid for this board");
+        return send_error(req, "400 Bad Request", "이 보드에 맞지 않는 크기입니다", remaining > 0);
     }
 
-    // flash writes need a source buffer in internal RAM
+    // 플래시 쓰기 원본 버퍼는 내부 RAM이어야 한다
     chunk = heap_caps_malloc(OTA_CHUNK_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     scan = heap_caps_calloc(1, sizeof(tOtaScan), MALLOC_CAP_SPIRAM);
     if ((chunk == NULL) || (scan == NULL))
     {
         heap_caps_free(chunk);
         heap_caps_free(scan);
-        return send_error(req, "500 Internal Server Error", "Out of memory");
+        return send_error(req, "500 Internal Server Error", "메모리가 부족합니다", 1);
     }
 
-    UpdateInProgress = 1;
     ota_tag_scan_init(&scan->tag, PlatformTag);
     ESP_LOGI(TAG, "Update start: %d bytes to %s", (int)req->content_len, target->label);
 
     err = esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &handle);
     if (err != ESP_OK)
     {
-        problem = "Could not start the update";
+        problem = begin_problem(err);
+        handle = 0;
     }
 
     while ((problem == NULL) && (remaining > 0))
@@ -199,14 +188,14 @@ static esp_err_t ota_post_handler(httpd_req_t* req)
         {
             if (++timeouts > 5)
             {
-                problem = "Upload timed out";
+                problem = "업로드 시간이 초과됐습니다";
             }
             continue;
         }
 
         if (received <= 0)
         {
-            problem = "Upload interrupted";
+            problem = "업로드가 끊겼습니다";
             break;
         }
         timeouts = 0;
@@ -228,6 +217,7 @@ static esp_err_t ota_post_handler(httpd_req_t* req)
                 scan->header_checked = 1;
                 if (problem != NULL)
                 {
+                    remaining -= received;
                     break;
                 }
             }
@@ -237,7 +227,8 @@ static esp_err_t ota_post_handler(httpd_req_t* req)
 
         if (esp_ota_write(handle, chunk, received) != ESP_OK)
         {
-            problem = "Flash write failed";
+            problem = "플래시 쓰기에 실패했습니다";
+            remaining -= received;
             break;
         }
 
@@ -246,7 +237,7 @@ static esp_err_t ota_post_handler(httpd_req_t* req)
 
     if ((problem == NULL) && !scan->tag.found)
     {
-        problem = "Image is not an OTA build for " CONFIG_TONEX_FORK_OTA_PLATFORM_ID;
+        problem = CONFIG_TONEX_FORK_OTA_PLATFORM_ID " 포크 OTA 빌드 이미지가 아닙니다";
     }
 
     if (problem != NULL)
@@ -258,27 +249,26 @@ static esp_err_t ota_post_handler(httpd_req_t* req)
     }
     else if (esp_ota_end(handle) != ESP_OK)
     {
-        problem = "Image verification failed";
+        problem = "이미지 검증에 실패했습니다";
     }
     else if (esp_ota_set_boot_partition(target) != ESP_OK)
     {
-        problem = "Could not select the new image";
+        problem = "새 이미지로 부팅을 바꾸지 못했습니다";
     }
 
     heap_caps_free(chunk);
     heap_caps_free(scan);
-    UpdateInProgress = 0;
 
     if (problem != NULL)
     {
-        return send_error(req, "400 Bad Request", problem);
+        return send_error(req, "400 Bad Request", problem, remaining > 0);
     }
 
     ESP_LOGI(TAG, "Update written, restarting");
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_sendstr(req, "OK");
 
-    // let the response reach the browser before restarting
+    // 응답이 브라우저에 닿은 뒤 재시작한다
     const esp_timer_create_args_t restart_args = {.callback = restart_timer_cb, .name = "ota_restart"};
     esp_timer_handle_t restart_timer;
     if (esp_timer_create(&restart_args, &restart_timer) == ESP_OK)
@@ -301,13 +291,6 @@ static const httpd_uri_t ota_uri =
     .user_ctx = NULL
 };
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 esp_err_t ota_update_register(httpd_handle_t server)
 {
     if (ConfirmTimer == NULL)
@@ -323,25 +306,11 @@ esp_err_t ota_update_register(httpd_handle_t server)
     return httpd_register_uri_handler(server, &ota_uri);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 uint8_t ota_update_is_available(void)
 {
     return esp_ota_get_next_update_partition(NULL) != NULL;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 const char* ota_update_platform_id(void)
 {
     return CONFIG_TONEX_FORK_OTA_PLATFORM_ID;

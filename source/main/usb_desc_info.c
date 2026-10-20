@@ -60,13 +60,6 @@ typedef struct
 static SemaphoreHandle_t InfoMutex = NULL;
 static char* InfoText = NULL;
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void add_line(tTextBuilder* builder, const char* format, ...)
 {
     va_list args;
@@ -94,19 +87,13 @@ static void add_line(tTextBuilder* builder, const char* format, ...)
     builder->text[builder->used] = 0;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       UTF-16LE to printable ASCII, unsafe characters replaced
-*****************************************************************************/
+// UTF-16LE를 출력 가능한 ASCII로. JSON에 그대로 실리므로 따옴표·역슬래시도 바꾼다
 static void string_desc_to_ascii(const usb_str_desc_t* desc, char* dest, size_t size)
 {
     size_t out = 0;
 
     dest[0] = 0;
-    if (desc == NULL)
+    if ((desc == NULL) || (desc->bLength < 2))
     {
         return;
     }
@@ -120,26 +107,12 @@ static void string_desc_to_ascii(const usb_str_desc_t* desc, char* dest, size_t 
     dest[out] = 0;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static const char* endpoint_type_name(uint8_t attributes)
 {
     static const char* names[] = {"ctrl", "iso", "bulk", "int"};
     return names[attributes & 0x03];
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void build_text(tTextBuilder* builder, usb_device_handle_t dev_hdl, const usb_device_desc_t* dd, const usb_config_desc_t* cd)
 {
     usb_device_info_t info;
@@ -186,7 +159,10 @@ static void build_text(tTextBuilder* builder, usb_device_handle_t dev_hdl, const
         {
             case USB_B_DESCRIPTOR_TYPE_INTERFACE_ASSOCIATION:
             {
-                add_line(builder, "IAD  first IF %d  count %d  class %02X/%02X/%02X", raw[2], raw[3], raw[4], raw[5], raw[6]);
+                if (raw[0] >= 7)
+                {
+                    add_line(builder, "IAD  first IF %d  count %d  class %02X/%02X/%02X", raw[2], raw[3], raw[4], raw[5], raw[6]);
+                }
             } break;
 
             case USB_B_DESCRIPTOR_TYPE_INTERFACE:
@@ -239,7 +215,11 @@ static void build_text(tTextBuilder* builder, usb_device_handle_t dev_hdl, const
 
             case USB_DESC_CS_INTERFACE:
             {
-                if (current_class != USB_CLASS_AUDIO)
+                if (raw[0] < 3)
+                {
+                    add_line(builder, "   CS_IF len %d", raw[0]);
+                }
+                else if (current_class != USB_CLASS_AUDIO)
                 {
                     add_line(builder, "   CS_IF subtype %02X len %d", raw[2], raw[0]);
                 }
@@ -285,7 +265,7 @@ static void build_text(tTextBuilder* builder, usb_device_handle_t dev_hdl, const
 
             case USB_DESC_CS_ENDPOINT:
             {
-                add_line(builder, "   CS_EP subtype %02X len %d", raw[2], raw[0]);
+                add_line(builder, "   CS_EP subtype %02X len %d", (raw[0] >= 3) ? raw[2] : 0, raw[0]);
             } break;
 
             default:
@@ -314,19 +294,23 @@ static void build_text(tTextBuilder* builder, usb_device_handle_t dev_hdl, const
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       runs in the USB class driver task
+* NOTES:       USB class driver 태스크에서 장치를 연 직후 불린다.
+*              디스크립터는 여기서 직접 다시 얻는다(호출부 지역 변수의 초기화·반환값 확인에 기대지 않으려고).
 *****************************************************************************/
-void usb_desc_info_capture(usb_device_handle_t dev_hdl, const usb_device_desc_t* device_desc, const usb_config_desc_t* config_desc)
+void usb_desc_info_capture(usb_device_handle_t dev_hdl)
 {
     tTextBuilder builder;
+    const usb_device_desc_t* device_desc = NULL;
+    const usb_config_desc_t* config_desc = NULL;
 
-    if (device_desc == NULL)
+    if ((dev_hdl == NULL) || (usb_host_get_device_descriptor(dev_hdl, &device_desc) != ESP_OK) || (device_desc == NULL))
     {
         return;
+    }
+
+    if (usb_host_get_active_config_descriptor(dev_hdl, &config_desc) != ESP_OK)
+    {
+        config_desc = NULL;
     }
 
     builder.text = heap_caps_malloc(DESC_INFO_TEXT_SIZE, MALLOC_CAP_SPIRAM);
@@ -370,11 +354,7 @@ void usb_desc_info_capture(usb_device_handle_t dev_hdl, const usb_device_desc_t*
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
 * RETURN:      length copied
-* NOTES:
 *****************************************************************************/
 size_t usb_desc_info_copy_text(char* dest, size_t size)
 {

@@ -21,10 +21,10 @@ limitations under the License.
 
 // 초콜릿 버튼 동작 실행. 동작은 CC로 다시 만들지 않고 기존 control/usb 함수를 직접 부른다.
 
-// returns 1 if the packet was handled here and must not go to midi_helper
+// 1이면 여기서 처리했으니 midi_helper로 보내지 말 것
 uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length);
 
-// BLE Central connection hooks (midi_control.c)
+// BLE Central 연결 상태 연결점 (midi_control.c)
 void choc_exec_on_ble_connecting(const char* device_name);
 void choc_exec_on_ble_disconnected(void);
 uint8_t choc_exec_is_chocolate_connected(void);

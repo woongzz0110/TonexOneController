@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fork hooks and skins partition size
+        run: ./tools/check_fork_hooks.sh
+
       - name: Host tests (no hardware)
         run: ./source/test_host/run_tests.sh
 

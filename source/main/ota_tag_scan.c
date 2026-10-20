@@ -12,19 +12,12 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
- 
+
 */
 
 #include <string.h>
 #include "ota_tag_scan.h"
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       
-*****************************************************************************/
 static uint8_t contains(const uint8_t* data, size_t length, const uint8_t* tag, size_t tag_length)
 {
     if (length < tag_length)
@@ -43,13 +36,7 @@ static uint8_t contains(const uint8_t* data, size_t length, const uint8_t* tag, 
     return 0;
 }
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       tag must be 1..OTA_TAG_SCAN_MAX_TAG characters
-*****************************************************************************/
+// tag는 1..OTA_TAG_SCAN_MAX_TAG자. 그보다 길면 tag_length가 0이 되어 영원히 못 찾는다(호출부에서 정적 검사)
 void ota_tag_scan_init(tOtaTagScan* scan, const char* tag)
 {
     memset((void*)scan, 0, sizeof(tOtaTagScan));
@@ -62,13 +49,7 @@ void ota_tag_scan_init(tOtaTagScan* scan, const char* tag)
     }
 }
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       keeps the last (tag length - 1) bytes of the stream between calls
-*****************************************************************************/
+// 호출 사이에 지금까지 받은 바이트열의 끝 (tag 길이 - 1)바이트를 들고 있다
 void ota_tag_scan_feed(tOtaTagScan* scan, const uint8_t* data, size_t length)
 {
     const size_t keep = (scan->tag_length > 0) ? (scan->tag_length - 1) : 0;
@@ -80,7 +61,7 @@ void ota_tag_scan_feed(tOtaTagScan* scan, const uint8_t* data, size_t length)
         return;
     }
 
-    // a match that starts in the kept tail ends within the first (tag length - 1) new bytes
+    // 들고 있던 꼬리에서 시작하는 일치는 새 데이터의 앞 (tag 길이 - 1)바이트 안에서 끝난다
     head = (length < keep) ? length : keep;
     memcpy(joined, scan->tail, scan->tail_length);
     memcpy(&joined[scan->tail_length], data, head);
@@ -92,7 +73,7 @@ void ota_tag_scan_feed(tOtaTagScan* scan, const uint8_t* data, size_t length)
         return;
     }
 
-    // new tail = last 'keep' bytes of (old tail + data)
+    // 새 꼬리 = (이전 꼬리 + data)의 끝 keep바이트
     if (length >= keep)
     {
         memcpy(scan->tail, &data[length - keep], keep);

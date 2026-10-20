@@ -23,7 +23,8 @@ limitations under the License.
 
 // 포크가 추가한 설정(볼륨 부스트, 초콜릿 버튼 배치).
 // 업스트림 control.c 설정 구조체와 분리해 자체 NVS 키에 저장한다(업스트림 병합 충돌 최소화).
-// 저장은 재부팅 없이 즉시 적용된다. 어느 태스크에서 호출해도 된다.
+// set_*는 메모리에 바로 반영하고 막히지 않는다. NVS 저장은 마지막 변경 1초 뒤 전용 태스크가 한 번 한다
+// (그 1초 안에 전원이 꺼지면 마지막 변경만 사라진다).
 
 void fork_settings_load(void);
 
@@ -32,3 +33,6 @@ uint8_t fork_settings_set_boost(const tBoostConfig* config);
 
 void fork_settings_get_choc(tChocConfig* config);
 void fork_settings_set_choc(const tChocConfig* config);
+
+// 웹 저장처럼 두 설정을 한 번에 바꿀 때: 부스트 값이 틀리면 둘 다 바꾸지 않는다
+uint8_t fork_settings_set_all(const tBoostConfig* boost, const tChocConfig* choc);

@@ -91,6 +91,8 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
   TONEX에서 볼륨을 한 번이라도 읽기 전에는 UNKNOWN(배지 "BOOST --")이다(그 전 값은 `tonex_params` 기본값 0dB라 판정에 쓰면 틀린다).
 - 토글 `boost_ctrl_toggle()`: ON이면 OFF 값, OFF·CUSTOM·UNKNOWN이면 ON 값. 볼륨은 MIDI 값을 거치지 않고 dB(float)로 `usb_modify_parameter()`에 보낸다.
 - 부팅 시 OFF: `control_set_sync_complete()`(프리셋 동기화 완료)에서 USB 연결당 한 번 OFF 값을 보낸다. 이 함수는 프리셋이 바뀔 때마다 불리므로 연결당 1회 플래그로 막고, USB가 끊기면 다시 한 번 적용한다.
+  계획서 정의대로 초콜릿 연결·번역 사용과 무관하게 TONEX가 연결될 때마다 적용된다(끄려면 "부팅 시 OFF로 시작"을 끈다).
+- 빅 TONEX(`AMP_MODELLER_TONEX`)는 볼륨을 보낸 뒤 되읽지 않으므로, `boost_ctrl_set()`이 보낸 값을 보드가 아는 볼륨에 바로 반영한다(One 계열은 페달이 다시 알려준 값을 쓴다).
 - 변경 파일: `boost.c/.h`, `boost_ctrl.c/.h`, `fork_settings.c/.h`(새 파일), 연결: `control.c`(2곳), `usb_comms.c`(끊김), `usb_tonex_one.c`·`usb_tonex_one_plus.c`·`usb_tonex_plug.c`·`usb_tonex.c`(볼륨 수신).
 
 ### 3-2. 초콜릿 번역 계층 + 웹 (계획서 2, 2-1)
@@ -102,11 +104,12 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
   - PC·CC2·CC3이 하나도 없는 패킷(예: CubeSuite 커스텀 모드의 CC122)은 기존 MIDI 처리로 그대로 보낸다. 지금 쓰는 커스텀 모드도 번역을 켠 채로 계속 동작한다.
 - 동작(`enum ChocActions`, 저장값이라 순서 고정): 없음, 부스트 토글/켜기/끄기, 탭템포, 프리셋 업/다운, 프리셋 직접 선택(1~N, 보드가 보여주는 프리셋 순서 기준), 딜레이·공간계·모듈레이션·컴프·노이즈게이트 On/Off.
 - 기본 배치: A 부스트 토글, B 탭템포, C 딜레이, D 공간계, E 프리셋 다운, F 프리셋 업. 번역 기본값 켜짐.
-- 번역은 보드의 "Midi CC on BT" 설정과 무관하다. Valeton GP5가 연결돼 있으면 번역하지 않고 기존 처리로 보낸다(효과·볼륨 파라미터가 TONEX 전용).
+- 번역은 보드의 "Midi CC on BT" 설정과 무관하다. Valeton GP5가 연결돼 있으면 번역하지 않고 기존 처리로 보낸다(효과·볼륨 파라미터 번호가 TONEX 전용).
+  웹 "실행" 버튼도 같은 이유로 TONEX 계열이 연결돼 있을 때만 동작을 실행한다(그 외에는 행 강조와 "NO TONEX" 알림만).
 - 웹(Config > Footswitch, `web/fork.js`): 버튼 A~F 동작 드롭다운(CC 번호 없음), 프리셋 직접 선택일 때만 번호 칸, 부스트 OFF/ON·부스트 양·부팅 시 OFF, 번역 사용,
   누른 버튼 행 1.5초 강조, 행마다 "실행"(그 버튼을 누른 것과 같은 동작), 부스트 토글 버튼, 현재 볼륨·배지·초콜릿 연결 표시.
   ON > +3dB를 넣으면 같은 부스트 양을 내는 OFF/ON 값을 안내하고 저장하지 않는다. 저장은 재부팅 없이 즉시 적용된다.
-- 웹소켓 명령(서버 `wifi_fork.c`): `GETCHOCCONFIG`, `SETCHOCCONFIG`(→`CHOCCONFIGRESULT` 0=OK, 1=범위, 2=단위, 3=OFF≥ON), `CHOCTEST`, `SETBOOST`(0/1/2=토글),
+- 웹소켓 명령(서버 `wifi_fork.c`): `GETCHOCCONFIG`, `SETCHOCCONFIG`(→`CHOCCONFIGRESULT` 0=OK, 1=부스트 범위, 2=단위, 3=OFF≥ON, 4=버튼 동작·프리셋 번호 범위), `CHOCTEST`, `SETBOOST`(0/1/2=토글),
   푸시 `GETCHOCCONFIG`(설정이 바뀌면 모든 화면에), `BOOSTSTATE`, `CHOCEVENT`.
 - 변경 파일: `choc_map.c/.h`, `choc_exec.c/.h`, `wifi_fork.c/.h`, `web/fork.js`(새 파일), 연결: `midi_control.c`(4곳), `wifi_config.c`(5곳), `web/index.html`(1줄).
 
@@ -126,7 +129,8 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 - 설정 창 탭뷰 끝에 `FSW` 탭(그 뒤에 `USB` 탭)을 붙인다. 기존 탭 인덱스(`CONFIG_TAB_*`)는 바뀌지 않는다.
 - 2열 배치: A/B/C(왼쪽), D/A+B/C+D(오른쪽) 동작 드롭다운. 드롭다운 항목은 동작 12개 + "Preset 1..N"(프리셋 직접 선택을 번호까지 한 번에 고름).
 - 부스트 OFF/ON은 −/+ 버튼(0.5dB), 부스트 양 표시, Translate·Boot Off 스위치. 범위를 벗어나면 저장하지 않고 안내한다.
-- 저장은 즉시(재부팅 없음). 웹과 같은 설정(`fork_settings`)을 공유하고 서로 바뀌면 상대 화면도 갱신된다. 초콜릿을 밟으면 해당 행 라벨이 1.5초 강조된다.
+- 바뀐 값은 바로 적용되고(재부팅 없음) NVS 저장은 마지막 변경 1초 뒤 한 번 한다(+/- 연타가 플래시 쓰기 연타가 되지 않게, 화면이 멈추지 않게).
+  웹과 같은 설정(`fork_settings`)을 공유하고 서로 바뀌면 상대 화면도 갱신된다. 초콜릿을 밟으면 해당 행 라벨이 1.5초 강조된다.
 
 ### 3-5. 튜너 (계획서 1)
 
@@ -141,10 +145,12 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 ### 3-6. 펌웨어 업데이트 (추가)
 
 - `WS43B_FORK` 프리셋은 OTA 파티션 표를 쓴다: `ota_0`/`ota_1` 각 0x4B0000(4.6875MB), `skins` 0x970000부터 0x690000. NVS 위치(0x9000)는 그대로라 설정이 유지된다.
-  앱 크기 0x3F88C0으로 슬롯 여유 15%.
+  슬롯 여유는 빌드 끝의 `TonexController.bin binary size ... (NN%) free` 줄로 확인한다(업스트림 코드가 늘면 줄어든다).
 - 웹 Config > Firmware에서 `TonexController.bin`을 올리면 다음 슬롯에 쓰고 재부팅한다. 받기 전에 이미지 헤더(매직·칩·프로젝트 이름)를, 쓰는 동안 플랫폼 표식
   `TNXCTL-OTA-PLATFORM=WS43B;`을 확인한다. 표식은 OTA를 켠 빌드에만 들어가므로 업스트림 이미지·다른 플랫폼 이미지는 거부된다.
-- 롤백: 부트로더 롤백을 켰다. 새 이미지가 웹 서버까지 정상으로 뜬 뒤 30초가 지나야 확정하고, 그 전에 리셋되면 이전 이미지로 돌아간다(웹 서버가 안 뜨는 이미지도 되돌아가 OTA 경로가 살아남는다).
+- 롤백: 부트로더 롤백을 켰다. 새 이미지는 웹 서버를 띄운 뒤 30초 동안 리셋되지 않으면 확정되고, 그 전에 리셋되면 이전 이미지로 돌아간다.
+  확정 조건은 "30초 안에 리셋되지 않음"뿐이다(멈춤은 리셋을 일으키지 않는다). 웹 요청 처리 등으로 조건을 강화하면 업데이트 뒤 웹을 열지 않을 때 다음 리셋에서 되돌아가므로 지금 조건을 쓴다.
+- OTA 빌드는 httpd 스택을 8KB로 늘린다(`esp_ota_end()` 이미지 검증이 httpd 태스크에서 돈다). 브라우저가 올리기 전에 같은 헤더·표식 검사를 해서, 잘못 고른 파일은 업로드 없이 사유를 보여준다.
 - 첫 설치(파티션 표가 바뀜)는 USB로 한 번 한다. 절차는 `docs/FIRMWARE_UPDATE.md`.
 
 ## 4. 설정 저장 포맷과 마이그레이션
@@ -161,8 +167,11 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 
 - 키가 없음(포크 첫 설치) → 기본값으로 저장.
 - 저장된 blob이 구조체보다 짧음(예전 레이아웃) → 앞부분만 읽히고 뒤에 추가된 필드는 기본값으로 남는다. `Version`만 올려 다시 저장한다.
-- 저장된 blob이 더 김(새 펌웨어가 쓴 뒤 예전 펌웨어로 내림) → `nvs_get_blob()`이 길이 오류를 내고 그 키만 기본값으로 저장된다.
-- 값이 잘못됨 → 부스트는 기본값, 버튼은 항목별 보정(`choc_config_sanitize()`).
+- 저장된 blob이 더 김(새 펌웨어가 쓴 뒤 OTA 롤백 등으로 예전 펌웨어가 됨) → 아는 앞부분만 쓰고 NVS는 덮지 않는다. 다시 새 펌웨어로 올리면 그대로 돌아온다.
+  (예전 펌웨어에서 그 설정을 바꿔 저장하면 짧은 blob으로 바뀌고, 새 펌웨어는 새 필드를 기본값으로 읽는다.)
+- 값이 잘못됨 → 부스트는 기본값, 버튼은 항목별 보정(`choc_config_sanitize()`). 새 버전이 쓴 blob이면 메모리에서만 고치고 NVS는 덮지 않는다.
+- `Version`은 setter가 쓸 때 현재 값으로 정해진다. 로드할 때는 0만 무효로 보고 그 외 값은 그대로 받는다.
+- 저장은 `fork_settings_set_*()`가 메모리에 바로 반영한 뒤 전용 태스크(`ForkSave`)가 마지막 변경 1초 뒤 한 번 한다. 그 1초 안에 전원이 꺼지면 마지막 변경만 사라진다.
 
 구조체를 바꿀 때: 필드는 뒤에만 추가하고 `*_CONFIG_VERSION`을 올린다. `ChocActions`는 뒤에만 추가한다(숫자가 NVS와 웹 프로토콜에 저장됨).
 

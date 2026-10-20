@@ -22,18 +22,17 @@ limitations under the License.
 
 // 튜너용 음정 검출(YIN + 포물선 보간). 하드웨어 의존 없음.
 // 사용 예: 48kHz 녹음 → pitch_decimate4() → 12kHz 창(약 40ms)마다 pitch_yin_detect() → 같은 구간 48kHz로 pitch_refine().
-// USB 오디오 수신은 TONEX One의 Full-Speed 디스크립터 확인 뒤에 붙인다(docs/FIRMWARE_PLAN.md 1장).
 
 #define PITCH_DECIMATE_TAPS     31
 
 typedef struct
 {
     float sample_rate;
-    uint16_t window;            // samples per detection
-    uint16_t tau_min;           // shortest period searched (highest note)
-    uint16_t tau_max;           // longest period searched, <= window / 2
+    uint16_t window;            // 검출 한 번에 쓰는 샘플 수
+    uint16_t tau_min;           // 찾는 가장 짧은 주기(가장 높은 음)
+    uint16_t tau_max;           // 찾는 가장 긴 주기, window / 2 이하
     float threshold;
-    float* work;                // tau_max + 2 floats
+    float* work;                // pitch_yin_init()의 work (2 * (tau_max + 2)개)
 } tPitchYin;
 
 typedef struct

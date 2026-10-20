@@ -113,7 +113,7 @@ enum UIElements
     UI_ELEMENT_TOAST,
     UI_ELEMENT_TUNER_FREQ,
     UI_ELEMENT_TUNER_STATE,
-    UI_ELEMENT_FORK             // fork: handled by display_fork.c
+    UI_ELEMENT_FORK             // fork: display_fork.c가 처리
 };
 
 enum UIAction
@@ -1177,13 +1177,7 @@ void UI_RefreshParameterValues(void)
 #endif    
 }
 
-/****************************************************************************
-* NAME:        UI_PostForkUpdate
-* DESCRIPTION: fork: queue an update for display_fork.c (display task)
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       
-*****************************************************************************/
+// fork: display_fork.c 화면 갱신을 display 태스크로 넘긴다. 큐가 차 있으면 버린다(막히지 않음)
 void UI_PostForkUpdate(uint8_t kind, uint16_t value, const char* text)
 {
 #if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
@@ -1461,13 +1455,13 @@ static  __attribute__((unused)) uint8_t update_ui_element(tUIUpdate* update)
             updateIconOrder();
 #endif              
 
-            // fork: boost badge follows the refreshed volume
+            // fork: 갱신된 볼륨으로 부스트 배지도 갱신 (빅 TONEX는 볼륨이 상태 패킷으로 온다)
             display_fork_on_parameters_refreshed();
         } break;
 
         case UI_ELEMENT_FORK:
         {
-            // fork: Action carries the display_fork.c kind, skip the generic action handling below
+            // fork: Action에 display_fork.c의 종류 값이 들어 있으므로 아래 공통 Action 처리를 타지 않게 바로 끝낸다
             display_fork_handle_update(update->Action, (uint16_t)update->Value, update->Text);
             return 1;
         } break;
@@ -2001,7 +1995,7 @@ void display_init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2CMutex
     // init toast
     ui_init_toast();
 
-    // fork: runtime-created boost badge and settings tabs (display_fork.c)
+    // fork: 부스트 배지·설정 탭을 실행 중에 만든다. ui_init() 뒤, display 태스크 시작 전이어야 한다 (display_fork.c)
     display_fork_init();
 
 #if CONFIG_TONEX_CONTROLLER_DISPLAY_FULL_UI

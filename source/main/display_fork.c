@@ -45,17 +45,14 @@ enum ForkUIKinds
     FORK_UI_USB_INFO
 };
 
-static const char *TAG = "app_display_fork";
+// ---- 다른 태스크에서 부르는 API (큐로만 넘긴다) ----
 
-/****************************************************************************
-* Thread-safe API
-*****************************************************************************/
 void UI_ShowActionToast(const char* text)
 {
 #if CONFIG_TONEX_FORK_UI_800X480
     UI_PostForkUpdate(FORK_UI_ACTION_TOAST, 0, text);
 #elif CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
-    // other screens: fall back to the standard toast
+    // 다른 화면 크기는 기존 토스트(중앙)를 쓴다
     char buffer[64];
     strncpy(buffer, text, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = 0;
@@ -96,6 +93,8 @@ void UI_RefreshUsbInfo(void)
 }
 
 #if CONFIG_TONEX_FORK_UI_800X480
+
+static const char *TAG = "app_display_fork";
 
 #define COLOR_ORANGE                0xFB9230
 #define COLOR_DARK_ORANGE           0x513D2B
@@ -152,13 +151,6 @@ typedef struct
 
 static tForkUI ForkUI;
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void set_db_label(lv_obj_t* label, float db)
 {
     char buffer[16];
@@ -167,9 +159,8 @@ static void set_db_label(lv_obj_t* label, float db)
     lv_label_set_text(label, buffer);
 }
 
-/****************************************************************************
-* Main screen boost badge
-*****************************************************************************/
+// ---- 메인 화면 부스트 배지 ----
+
 static void refresh_badge(void)
 {
     float volume = 0.0f;
@@ -241,13 +232,7 @@ static void refresh_badge(void)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       sits in the empty area under the Bank box, left of the skin
-*****************************************************************************/
+// Bank 상자 아래, 스킨 왼쪽의 빈 자리. 클릭을 받지 않아야 메인 화면 스와이프가 그대로 동작한다
 static void create_badge(void)
 {
     lv_obj_t* parent = objects.ui_touch_gesture_container;
@@ -275,9 +260,8 @@ static void create_badge(void)
     refresh_badge();
 }
 
-/****************************************************************************
-* Action toast: short message at the bottom, above the effect icons
-*****************************************************************************/
+// ---- 동작 알림: 효과 아이콘 위 하단에 잠깐 ----
+
 static void toast_timer_cb(lv_timer_t* timer)
 {
     lv_obj_add_flag(ForkUI.toast, LV_OBJ_FLAG_HIDDEN);
@@ -311,9 +295,8 @@ static void show_action_toast(const char* text)
     lv_timer_resume(ForkUI.toast_timer);
 }
 
-/****************************************************************************
-* Settings: FSW tab (button layout + boost values)
-*****************************************************************************/
+// ---- 설정 창 FSW 탭: 버튼 배치와 부스트 값 ----
+
 static uint16_t dropdown_index_for(const tChocButtonConfig* button)
 {
     if (button->Action == CHOC_ACTION_PRESET_SELECT)
@@ -345,10 +328,30 @@ static void button_config_for_index(uint16_t index, tChocButtonConfig* button)
     }
 }
 
+// 잘리면 used를 버퍼 끝에 묶어 다음 snprintf의 남은 크기가 음수(size_t 언더플로)가 되지 않게 한다
+static void append_option(char* options, size_t size, size_t* used, const char* text)
+{
+    int written;
+
+    if (*used >= (size - 1))
+    {
+        return;
+    }
+
+    written = snprintf(&options[*used], size - *used, "%s\n", text);
+    if (written > 0)
+    {
+        *used += (size_t)written;
+        if (*used > (size - 1))
+        {
+            *used = size - 1;
+        }
+    }
+}
+
 static void build_dropdown_options(uint8_t preset_count)
 {
-    // worst case 150 presets: 12 action names + "Preset NNN\n" each
-    size_t size = 400 + ((size_t)preset_count * 12);
+    size_t size = 512 + ((size_t)preset_count * 12);
     char* options = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
     size_t used = 0;
 
@@ -361,15 +364,18 @@ static void build_dropdown_options(uint8_t preset_count)
     options[0] = 0;
     for (uint16_t loop = 0; loop < DROPDOWN_ACTION_COUNT; loop++)
     {
-        used += snprintf(&options[used], size - used, "%s\n", choc_map_action_name(DropdownActions[loop]));
+        append_option(options, size, &used, choc_map_action_name(DropdownActions[loop]));
     }
 
     for (uint16_t loop = 1; loop <= preset_count; loop++)
     {
-        used += snprintf(&options[used], size - used, "Preset %d\n", (int)loop);
+        char name[16];
+
+        snprintf(name, sizeof(name), "Preset %d", (int)loop);
+        append_option(options, size, &used, name);
     }
 
-    // drop the trailing newline
+    // 마지막 줄바꿈은 빈 항목이 되므로 지운다
     if ((used > 0) && (options[used - 1] == '\n'))
     {
         options[used - 1] = 0;
@@ -382,6 +388,27 @@ static void build_dropdown_options(uint8_t preset_count)
 
     heap_caps_free(options);
     ForkUI.dropdown_preset_count = preset_count;
+}
+
+// 연결된 장치의 프리셋 수. 웹에서 더 큰 번호를 넣었으면 그 번호까지 보이게 한다
+static uint8_t wanted_preset_count(const tChocConfig* choc)
+{
+    uint8_t preset_count = usb_get_max_presets_for_connected_modeller();
+
+    if ((preset_count == 0) || (preset_count > CHOC_PRESET_PARAM_MAX))
+    {
+        preset_count = 20;
+    }
+
+    for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
+    {
+        if ((choc->Buttons[loop].Action == CHOC_ACTION_PRESET_SELECT) && (choc->Buttons[loop].Param > preset_count))
+        {
+            preset_count = choc->Buttons[loop].Param;
+        }
+    }
+
+    return preset_count;
 }
 
 static void refresh_footswitch_tab(void)
@@ -398,20 +425,7 @@ static void refresh_footswitch_tab(void)
     fork_settings_get_choc(&choc);
     fork_settings_get_boost(&boost);
 
-    // TONEX One은 20개. 웹에서 더 큰 번호를 넣었으면 그 번호까지 보이게 한다
-    preset_count = usb_get_max_presets_for_connected_modeller();
-    if ((preset_count == 0) || (preset_count > CHOC_PRESET_PARAM_MAX))
-    {
-        preset_count = 20;
-    }
-    for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
-    {
-        if ((choc.Buttons[loop].Action == CHOC_ACTION_PRESET_SELECT) && (choc.Buttons[loop].Param > preset_count))
-        {
-            preset_count = choc.Buttons[loop].Param;
-        }
-    }
-
+    preset_count = wanted_preset_count(&choc);
     if (preset_count != ForkUI.dropdown_preset_count)
     {
         build_dropdown_options(preset_count);
@@ -455,7 +469,7 @@ static void dropdown_changed_cb(lv_event_t* e)
     fork_settings_set_choc(&choc);
 }
 
-// user data: bit0 = ON value (else OFF), bit1 = increase (else decrease)
+// user data: bit0 = ON 값(아니면 OFF 값), bit1 = 올림(아니면 내림)
 static void boost_step_cb(lv_event_t* e)
 {
     uintptr_t mode = (uintptr_t)lv_event_get_user_data(e);
@@ -477,6 +491,10 @@ static void boost_step_cb(lv_event_t* e)
     {
         // ON은 +3dB가 최대: 부스트 양을 늘리려면 OFF를 내린다
         lv_label_set_text(ForkUI.status_label, "Limit: -40..+3 dB, OFF < ON");
+    }
+    else
+    {
+        lv_label_set_text(ForkUI.status_label, "Settings apply immediately");
     }
 }
 
@@ -589,7 +607,6 @@ static void create_footswitch_tab(void)
 
     for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
     {
-        // left column A, B, C / right column D, A+B, C+D
         lv_coord_t column_x = (loop < 3) ? 0 : 395;
         lv_coord_t row_y = 8 + ((loop % 3) * 56);
         lv_obj_t* dropdown;
@@ -611,7 +628,6 @@ static void create_footswitch_tab(void)
         lv_obj_add_event_cb(dropdown, dropdown_changed_cb, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)loop);
     }
 
-    // boost values
     create_label(tab, "Boost Off", 8, 182);
     create_step_button(tab, "-", 140, 176, 0x00);
     ForkUI.boost_off_value = create_label(tab, "", 196, 182);
@@ -641,9 +657,8 @@ static void create_footswitch_tab(void)
     refresh_footswitch_tab();
 }
 
-/****************************************************************************
-* Settings: USB tab (descriptor dump for the tuner feasibility check)
-*****************************************************************************/
+// ---- 설정 창 USB 탭: 튜너 가능성 확인용 디스크립터 요약 ----
+
 static void refresh_usb_tab(void)
 {
     const size_t size = 6 * 1024;
@@ -685,13 +700,7 @@ static void create_usb_tab(void)
 
 #endif  //CONFIG_TONEX_FORK_UI_800X480
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       call once after ui_init(), before the display task starts
-*****************************************************************************/
+// ui_init() 뒤, display 태스크가 시작되기 전에 한 번(이때는 다른 태스크가 LVGL을 만지지 않는다)
 void display_fork_init(void)
 {
 #if CONFIG_TONEX_FORK_UI_800X480
@@ -703,13 +712,7 @@ void display_fork_init(void)
 #endif
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
+// display 태스크(LVGL 락 보유)에서 불린다
 void display_fork_handle_update(uint8_t kind, uint16_t value, const char* text)
 {
 #if CONFIG_TONEX_FORK_UI_800X480
@@ -753,16 +756,21 @@ void display_fork_handle_update(uint8_t kind, uint16_t value, const char* text)
 #endif
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       state updates (incl. big Tonex volume) arrive as a full parameter refresh
-*****************************************************************************/
+// 전체 파라미터 갱신 뒤 불린다. 장치가 바뀌면(USB 연결) 프리셋 개수도 달라지므로 FSW 탭 목록을 다시 만든다
 void display_fork_on_parameters_refreshed(void)
 {
 #if CONFIG_TONEX_FORK_UI_800X480
+    tChocConfig choc;
+
     refresh_badge();
+
+    if (ForkUI.fsw_tab != NULL)
+    {
+        fork_settings_get_choc(&choc);
+        if (wanted_preset_count(&choc) != ForkUI.dropdown_preset_count)
+        {
+            refresh_footswitch_tab();
+        }
+    }
 #endif
 }

@@ -27,7 +27,7 @@ uint8_t boost_ctrl_get_state(float* volume_db);
 esp_err_t boost_ctrl_set(uint8_t on, float* target_db);
 esp_err_t boost_ctrl_toggle(uint8_t* new_state, float* target_db);
 
-// hooks called from upstream code
+// 업스트림 코드의 연결점에서 부른다(USB 태스크 포함, 막히지 않음)
 void boost_ctrl_on_volume_report(void);
 void boost_ctrl_on_sync_complete(void);
 void boost_ctrl_on_usb_disconnected(void);

@@ -47,13 +47,6 @@ static const char* ActionNames[CHOC_ACTION_COUNT] =
 
 static const char* ButtonNames[CHOC_BUTTON_COUNT] = {"A", "B", "C", "D", "A+B", "C+D"};
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:      number of data bytes following the status byte
-* NOTES:
-*****************************************************************************/
 static uint8_t midi_data_length(uint8_t status)
 {
     switch (status & 0xF0)
@@ -71,13 +64,6 @@ static uint8_t midi_data_length(uint8_t status)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void add_button(tChocDecodeResult* result, uint8_t button)
 {
     if (result->Count < CHOC_MAX_EVENTS)
@@ -86,13 +72,6 @@ static void add_button(tChocDecodeResult* result, uint8_t button)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void handle_message(uint8_t status, uint8_t data_1, uint8_t data_2, tChocDecodeResult* result, uint8_t* combo_found)
 {
     // 채널은 보지 않는다: 이 경로는 이미 초콜릿 연결로 한정돼 있다
@@ -122,18 +101,15 @@ static void handle_message(uint8_t status, uint8_t data_1, uint8_t data_2, tChoc
 
         default:
         {
-            // not used by the Chocolate
+            // 초콜릿이 보내지 않는 메시지
         } break;
     }
 }
 
 /****************************************************************************
 * NAME:        choc_map_decode
-* DESCRIPTION: Decode a BLE-MIDI (or raw MIDI) packet into Chocolate buttons
-* PARAMETERS:
-* RETURN:
-* NOTES:       BLE-MIDI: header, then [timestamp][status][data..] with optional
-*              running status. A status byte is always preceded by a timestamp.
+* NOTES:       BLE-MIDI: 헤더 다음에 [타임스탬프][상태][데이터..]가 반복되고 러닝 스테이터스가 있다.
+*              상태 바이트 앞에는 항상 타임스탬프가 온다. 헤더가 없으면 일반 MIDI로 읽는다.
 *****************************************************************************/
 void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* result)
 {
@@ -150,7 +126,7 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
         return;
     }
 
-    // same header rule as midi_helper_process_incoming_data()
+    // midi_helper_process_incoming_data()와 같은 헤더 판정
     if (((data[0] & 0x80) != 0) && ((data[0] & 0x40) == 0) && ((data[1] & 0x80) != 0))
     {
         has_header = 1;
@@ -165,7 +141,6 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
         {
             if (has_header && !prev_was_timestamp)
             {
-                // timestamp low byte
                 prev_was_timestamp = 1;
                 index++;
                 continue;
@@ -177,7 +152,6 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
             {
                 running_status = 0;
 
-                // skip to end of sysex (or end of packet)
                 while ((index < length) && (data[index] != MIDI_SYSEX_END))
                 {
                     index++;
@@ -188,7 +162,7 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
 
             if (byte >= 0xF0)
             {
-                // system common/realtime: not sent by the Chocolate, skip status only
+                // 시스템 메시지는 초콜릿이 보내지 않는다: 상태 바이트만 건너뛴다
                 if (byte < 0xF8)
                 {
                     running_status = 0;
@@ -206,13 +180,11 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
 
             if (running_status == 0)
             {
-                // stray data byte
                 index++;
                 continue;
             }
         }
 
-        // index now points at the first data byte for running_status
         uint8_t needed = midi_data_length(running_status);
         if ((index + needed) > length)
         {
@@ -255,13 +227,6 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 void choc_config_set_default(tChocConfig* config)
 {
     memset((void*)config, 0, sizeof(tChocConfig));
@@ -283,21 +248,12 @@ void choc_config_set_default(tChocConfig* config)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:      1 if anything was changed
-* NOTES:
+* RETURN:      1 if any field was corrected
+* NOTES:       Version은 건드리지 않는다: 새 펌웨어가 쓴 설정을 읽었을 때 그 표시를 지우지 않으려고
 *****************************************************************************/
 uint8_t choc_config_sanitize(tChocConfig* config)
 {
     uint8_t changed = 0;
-
-    if (config->Version != CHOC_CONFIG_VERSION)
-    {
-        config->Version = CHOC_CONFIG_VERSION;
-        changed = 1;
-    }
 
     if (config->TranslateEnable > 1)
     {
@@ -323,13 +279,6 @@ uint8_t choc_config_sanitize(tChocConfig* config)
     return changed;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 const char* choc_map_action_name(uint8_t action)
 {
     if (action >= CHOC_ACTION_COUNT)
@@ -340,13 +289,6 @@ const char* choc_map_action_name(uint8_t action)
     return ActionNames[action];
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 const char* choc_map_button_name(uint8_t button)
 {
     if (button >= CHOC_BUTTON_COUNT)
@@ -357,13 +299,7 @@ const char* choc_map_button_name(uint8_t button)
     return ButtonNames[button];
 }
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       BLE names used by M-Vave Chocolate / Chocolate Plus
-*****************************************************************************/
+// M-Vave Chocolate / Chocolate Plus의 BLE 이름
 uint8_t choc_map_is_chocolate_name(const char* device_name)
 {
     if (device_name == NULL)

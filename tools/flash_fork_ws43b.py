@@ -8,7 +8,8 @@
   DIR    flasher_args.json 이 있는 폴더. 기본값 source/build/fork_ws43b
          (GitHub Actions 산출물 zip을 푼 폴더도 된다)
 
-  --no-skins       스킨 이미지(약 5.9MB)를 건너뛴다. 스킨 파티션 위치가 바뀌는 첫 설치에는 쓰지 말 것.
+  --no-skins       스킨 이미지(약 5.9MB)를 건너뛴다. 보드의 파티션 표가 이 빌드와 같을 때만 허용한다
+                   (업스트림 펌웨어에서 처음 넘어올 때는 스킨 위치가 바뀌므로 거부된다).
   --erase-settings 보드 설정(NVS)을 지운다.
 
 esptool 5 이상이 필요하다: ESP-IDF 환경에서 실행하거나 `pip install "esptool>=5"`.
@@ -19,9 +20,11 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 
 NVS_OFFSET = "0x9000"
 NVS_SIZE = "0x4000"
+PARTITION_TABLE_OFFSET = "0x8000"
 
 
 def find_esptool():
@@ -39,6 +42,17 @@ def resolve(directory, path):
     if os.path.exists(flat):
         return flat
     sys.exit(f"파일을 찾을 수 없습니다: {path} (폴더 {directory})")
+
+
+def board_has_same_partition_table(common, table_path):
+    with open(table_path, "rb") as f:
+        expected = f.read()
+
+    with tempfile.TemporaryDirectory() as temp:
+        current_path = os.path.join(temp, "current.bin")
+        subprocess.run(common + ["--after", "no-reset", "read-flash", PARTITION_TABLE_OFFSET, hex(len(expected)), current_path], check=True)
+        with open(current_path, "rb") as f:
+            return f.read() == expected
 
 
 def main():
@@ -62,7 +76,10 @@ def main():
         sys.exit("ESP32-S3용 빌드가 아닙니다.")
 
     files = []
+    table_path = None
     for offset, path in sorted(meta["flash_files"].items(), key=lambda item: int(item[0], 16)):
+        if offset.lower() == PARTITION_TABLE_OFFSET:
+            table_path = resolve(directory, path)
         if "--no-skins" in options and "skins" in os.path.basename(path):
             continue
         files += [offset, resolve(directory, path)]
@@ -73,6 +90,11 @@ def main():
     esptool = find_esptool()
     common = esptool + ["--chip", "esp32s3", "-p", port, "-b", "460800"]
     settings = meta.get("flash_settings", {})
+
+    # 파티션 표가 바뀌면 스킨 위치도 바뀐다. 스킨을 안 쓰면 화면에 스킨이 사라진다.
+    if "--no-skins" in options:
+        if table_path is None or not board_has_same_partition_table(common, table_path):
+            sys.exit("보드의 파티션 표가 이 빌드와 다릅니다. --no-skins 없이 전체를 설치하세요.")
 
     if "--erase-settings" in options:
         subprocess.run(common + ["--after", "no-reset", "erase-region", NVS_OFFSET, NVS_SIZE], check=True)

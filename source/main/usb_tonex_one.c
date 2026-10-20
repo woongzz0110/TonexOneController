@@ -906,7 +906,7 @@ static TonexStatus usb_tonex_one_parse_param_changed(uint8_t* unframed, uint16_t
 
                 ESP_LOGI(TAG, "Got global volume: raw:%3.2f  scaled:%3.2f", value, scaled_value);
 
-                // fork: refresh boost badge/web (boost_ctrl.c)
+                // fork: 부스트 배지·웹 갱신 (boost_ctrl.c)
                 boost_ctrl_on_volume_report();
             }
         }

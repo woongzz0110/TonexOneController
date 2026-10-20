@@ -38,8 +38,16 @@ check $M/wifi_config.c          'void wifi_request_fork_push('
 check $M/wifi_config.c          'WIFI_FORK_URI_HANDLERS'
 check $M/web/index.html         'src="fork.js"'
 
+# 스킨 파티션은 업스트림(10M)보다 작다(OTA 슬롯 2개 때문에). 업스트림이 스킨을 키우면 여기서 걸린다.
+skins_part=$(awk -F, '$1 ~ /^skins/ {gsub(/ /, "", $5); print $5}' source/partitions_16MB_ota.csv)
+skins_file=$(wc -c < source/skin_images/16bit/skins.bin | tr -d ' ')
+if [ -z "$skins_part" ] || [ "$skins_file" -gt $((skins_part)) ]; then
+    echo "SKINS    source/skin_images/16bit/skins.bin ($skins_file bytes) does not fit the skins partition ($skins_part) in partitions_16MB_ota.csv"
+    missing=$((missing + 1))
+fi
+
 if [ "$missing" -ne 0 ]; then
-    echo "$missing hook(s) missing"
+    echo "$missing problem(s) found"
     exit 1
 fi
 

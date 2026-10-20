@@ -2026,7 +2026,7 @@ void control_set_sync_complete(void)
 {
     ControlData.SyncComplete = 1;
 
-    // fork: optional boost-off volume on first sync (boost_ctrl.c)
+    // fork: USB 연결마다 첫 동기화 때 부팅 시 OFF 볼륨 적용 (boost_ctrl.c)
     boost_ctrl_on_sync_complete();
 }
 
@@ -3256,7 +3256,7 @@ void control_load_config(void)
     // load the non-volatile user data
     LoadUserData();
 
-    // fork: settings kept under separate NVS keys (fork_settings.c)
+    // fork: 포크 설정은 별도 NVS 키에 있다. NVS 초기화 뒤에 불러야 한다 (fork_settings.c)
     fork_settings_load();
 }
 

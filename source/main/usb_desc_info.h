@@ -24,5 +24,5 @@ limitations under the License.
 // 4.3B는 USB가 TONEX 전용이라 시리얼 로그 대신 화면·웹에 띄운다.
 // 텍스트는 줄바꿈으로 구분되며 '"', '\\', 제어문자를 포함하지 않는다(JSON에 그대로 실을 수 있음).
 
-void usb_desc_info_capture(usb_device_handle_t dev_hdl, const usb_device_desc_t* device_desc, const usb_config_desc_t* config_desc);
+void usb_desc_info_capture(usb_device_handle_t dev_hdl);
 size_t usb_desc_info_copy_text(char* dest, size_t size);

@@ -146,5 +146,5 @@ endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Werror)
 
-# fork: sources added by this fork
+# fork: 포크가 추가한 소스·웹 파일
 include(${CMAKE_CURRENT_LIST_DIR}/fork.cmake)

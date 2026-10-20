@@ -862,7 +862,7 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
                 ESP_LOGE(GATTC_TAG, "connect device failed, status %d", p_data->open.status);
                 conn_device_a = false;
 
-                // fork: Chocolate translation layer (choc_exec.c)
+                // fork: 초콜릿 번역 계층 연결 추적 (choc_exec.c)
                 choc_exec_on_ble_disconnected();
                 break;
             }
@@ -1083,7 +1083,7 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
             //ESP_LOG_BUFFER_HEX(GATTC_TAG, p_data->notify.value, p_data->notify.value_len);
 
             // handle Midi data.
-            // fork: Chocolate signals are translated to actions instead (choc_exec.c)
+            // fork: 초콜릿 신호는 동작으로 번역하고, 번역하지 않은 패킷만 기존 처리로 (choc_exec.c)
             if (!choc_exec_handle_ble_midi(p_data->notify.value, p_data->notify.value_len))
             {
                 midi_helper_process_incoming_data(p_data->notify.value, p_data->notify.value_len, midi_serial_channel, control_get_config_item_int(CONFIG_ITEM_ENABLE_BT_MIDI_CC));            
@@ -1138,14 +1138,14 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
             // update UI to show a BT disconnected
             control_set_bt_status(0);
 
-            // fork: Chocolate translation layer (choc_exec.c)
-            choc_exec_on_ble_disconnected();
-
             if (memcmp(p_data->disconnect.remote_bda, gl_profile_tab.remote_bda, 6) == 0)
             {
                 ESP_LOGI(GATTC_TAG, "Device A disconnected");
                 conn_device_a = false;
                 get_service_a = false;
+
+                // fork: 초콜릿 번역 계층 연결 추적 (choc_exec.c)
+                choc_exec_on_ble_disconnected();
             }
             break;
             
@@ -1363,7 +1363,7 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                                     conn_device_a = true;
                                     ESP_LOGI(GATTC_TAG, "Searched device %s", remote_device_names[loop]);
 
-                                    // fork: Chocolate translation layer (choc_exec.c)
+                                    // fork: 초콜릿 번역 계층 연결 추적 (choc_exec.c)
                                     choc_exec_on_ble_connecting(remote_device_names[loop]);
 
                                     esp_ble_gap_stop_scanning();

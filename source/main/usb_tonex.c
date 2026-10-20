@@ -826,7 +826,7 @@ static TonexStatus usb_tonex_parse_global_config(uint8_t* unframed, uint16_t len
                             {
                                 param_ptr[TONEX_GLOBAL_MASTER_VOLUME].Value = temp_val; 
 
-                                // fork: refresh boost badge/web (boost_ctrl.c), non-blocking
+                                // fork: 부스트 배지·웹 갱신 (boost_ctrl.c). 파라미터 락을 쥔 채라 막히지 않는 함수여야 한다
                                 boost_ctrl_on_volume_report();
                             } break;
 

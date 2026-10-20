@@ -101,7 +101,7 @@ enum WiFivents
     EVENT_SYNC_PRESET_NAME,
     EVENT_SYNC_PRESET,
     EVENT_SYNC_CONFIG,
-    EVENT_SYNC_FORK             // fork: payload built by wifi_fork.c
+    EVENT_SYNC_FORK             // fork: 내용은 wifi_fork.c가 만든다
 };
 
 typedef struct
@@ -281,13 +281,8 @@ static uint8_t process_wifi_command(tWiFiMessage* message)
     return 1;
 }
 
-/****************************************************************************
-* NAME:        wifi_request_fork_push
-* DESCRIPTION: fork: queue a push to all web clients (built by wifi_fork.c)
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       never blocks: callers include the Bluetooth and USB tasks
-*****************************************************************************/
+// fork: 모든 웹 화면에 보낼 푸시를 큐에 넣는다(내용은 wifi_fork.c가 만든다).
+// BT·USB 태스크도 부르므로 절대 막히지 않아야 한다: 큐가 차 있으면 버린다.
 void wifi_request_fork_push(uint8_t type, uint16_t value)
 {
     tWiFiMessage message;
@@ -1452,7 +1447,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
                     }
                     else
                     {
-                        // fork: Footswitch/firmware/USB info commands (wifi_fork.c)
+                        // fork: Footswitch·펌웨어·USB 정보 명령 (wifi_fork.c)
                         wifi_fork_handle_ws_command(req, &pWebConfig->jctx, str_val);
                     }
                 }
@@ -1984,7 +1979,7 @@ static esp_err_t http_server_init(void)
     http_config.uri_match_fn = httpd_uri_match_wildcard;    //NULL;
     http_config.lru_purge_enable = true;
 
-    // fork: /fork.js (+ /update for OTA builds), and room for the upload handler
+    // fork: /fork.js(+ OTA 빌드는 /update) 핸들러 자리와, 업로드 처리에 필요한 스택
     http_config.max_uri_handlers += WIFI_FORK_URI_HANDLERS;
     http_config.stack_size += WIFI_FORK_EXTRA_STACK;
 
@@ -1998,7 +1993,7 @@ static esp_err_t http_server_init(void)
 
             ESP_LOGI(TAG, "Http register uri 1");
 
-            // fork: must come before the "/*" handler below (first match wins)
+            // fork: 아래 와일드카드 핸들러보다 먼저 등록해야 한다(먼저 맞는 핸들러가 받는다)
             wifi_fork_register_handlers(http_server);
 
     	    //httpd_register_uri_handler(http_server, &index_get);

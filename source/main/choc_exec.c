@@ -40,29 +40,16 @@ static const char *TAG = "app_choc_exec";
 // BT 콜백 태스크가 쓰고 웹 태스크가 읽는다
 static volatile uint8_t ChocolateConnected = 0;
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void show_result(const char* text)
 {
-    ESP_LOGI(TAG, "%s", text);
-
 #if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
     UI_ShowActionToast(text);
+#else
+    (void)text;
 #endif
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       보드가 알고 있는 실제 값을 읽어 반전한다(초콜릿 쪽 토글 상태와 어긋나지 않게)
-*****************************************************************************/
+// 보드가 알고 있는 실제 값을 읽어 반전한다(초콜릿 쪽 토글 상태와 어긋나지 않게)
 static void toggle_effect(uint16_t param, const char* name)
 {
     tModellerParameter* param_ptr;
@@ -83,13 +70,6 @@ static void toggle_effect(uint16_t param, const char* name)
     show_result(text);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void show_boost_result(uint8_t on, float target_db)
 {
     char text[MAX_TOAST_TEXT];
@@ -98,13 +78,6 @@ static void show_boost_result(uint8_t on, float target_db)
     show_result(text);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void run_action(const tChocButtonConfig* button_config)
 {
     char text[MAX_TOAST_TEXT];
@@ -202,11 +175,8 @@ static void run_action(const tChocButtonConfig* button_config)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       also used by the web page test buttons
+* NOTES:       BLE 경로와 웹 '실행' 버튼이 같이 쓴다.
+*              동작의 파라미터 번호는 TONEX 계열 기준이라, 그 외 장치(Valeton 등)에 보내면 엉뚱한 값이 바뀐다.
 *****************************************************************************/
 void choc_exec_run_button(uint8_t button)
 {
@@ -219,22 +189,26 @@ void choc_exec_run_button(uint8_t button)
 
     fork_settings_get_choc(&config);
 
-    ESP_LOGI(TAG, "button %s -> %s", choc_map_button_name(button), choc_map_action_name(config.Buttons[button].Action));
+    // 콘솔이 31250baud라 BT 콜백에서 INFO 로그를 찍으면 탭템포가 밀린다
+    ESP_LOGD(TAG, "button %s -> %s", choc_map_button_name(button), choc_map_action_name(config.Buttons[button].Action));
 
 #if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
     UI_NotifyChocButton(button);
 #endif
     wifi_request_fork_push(WIFI_FORK_PUSH_CHOC_BUTTON, button);
 
+    if (!boost_ctrl_is_supported())
+    {
+        show_result("NO TONEX");
+        return;
+    }
+
     run_action(&config.Buttons[button]);
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       runs in the Bluetooth callback task
+* RETURN:      1 if handled here (must not go to midi_helper)
+* NOTES:       Bluetooth 콜백 태스크에서 돈다
 *****************************************************************************/
 uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
 {
@@ -248,7 +222,6 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
 
     fork_settings_get_choc(&config);
 
-    // 효과 토글·볼륨 파라미터가 TONEX 계열 전용이라 그 외 장치는 기존 처리로 보낸다
     if (!config.TranslateEnable || !boost_ctrl_is_supported())
     {
         return 0;
@@ -258,7 +231,8 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
 
     if (!result.Claimed)
     {
-        // e.g. CubeSuite custom mode CCs: keep the original behaviour
+        // PC·CC2·CC3이 없는 패킷(예: CubeSuite 커스텀 모드의 다른 CC)은 원래 처리로 보낸다.
+        // CC2·CC3은 값과 무관하게 여기서 소비된다(choc_map.c).
         return 0;
     }
 
@@ -270,38 +244,17 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
     return 1;
 }
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       
-*****************************************************************************/
 void choc_exec_on_ble_connecting(const char* device_name)
 {
     ChocolateConnected = choc_map_is_chocolate_name(device_name);
     ESP_LOGI(TAG, "BLE connecting to %s (chocolate %d)", device_name, (int)ChocolateConnected);
 }
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       
-*****************************************************************************/
 void choc_exec_on_ble_disconnected(void)
 {
     ChocolateConnected = 0;
 }
 
-/****************************************************************************
-* NAME:        
-* DESCRIPTION: 
-* PARAMETERS:  
-* RETURN:      
-* NOTES:       
-*****************************************************************************/
 uint8_t choc_exec_is_chocolate_connected(void)
 {
     return ChocolateConnected;

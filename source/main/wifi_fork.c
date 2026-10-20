@@ -44,29 +44,24 @@ limitations under the License.
 #define PUSH_BUFFER_SIZE            (2 * 1024)
 #define USB_INFO_TEXT_SIZE          (6 * 1024)
 
+// 웹 프로토콜 값(fork.js RESULT_TEXT와 같은 순서)
 enum ChocConfigResults
 {
     CHOC_RESULT_OK,
     CHOC_RESULT_BOOST_RANGE,
     CHOC_RESULT_BOOST_STEP,
-    CHOC_RESULT_BOOST_ORDER
+    CHOC_RESULT_BOOST_ORDER,
+    CHOC_RESULT_BUTTON_RANGE
 };
 
 static const char *TAG = "app_wifi_fork";
 
-// only the WiFi task builds pushes, only the httpd task builds responses
+// 푸시는 wifi 태스크만, 응답은 httpd 태스크만 만든다(업스트림 TempBuffer를 같이 쓰지 않으려고 따로 둔다)
 static char* PushBuffer = NULL;
 
 extern const char fork_js_start[] asm("_binary_fork_js_start");
 extern const char fork_js_end[] asm("_binary_fork_js_end");
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void add_boost_state(json_gen_str_t* jstr)
 {
     float volume = 0.0f;
@@ -81,13 +76,6 @@ static void add_boost_state(json_gen_str_t* jstr)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void build_choc_config_json(char* buffer, size_t size)
 {
     json_gen_str_t jstr;
@@ -123,13 +111,6 @@ static void build_choc_config_json(char* buffer, size_t size)
     json_gen_str_end(&jstr);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void build_result_json(char* buffer, size_t size, const char* command, int result)
 {
     json_gen_str_t jstr;
@@ -142,13 +123,6 @@ static void build_result_json(char* buffer, size_t size, const char* command, in
     json_gen_str_end(&jstr);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static void build_firmware_info_json(char* buffer, size_t size)
 {
     json_gen_str_t jstr;
@@ -172,13 +146,7 @@ static void build_firmware_info_json(char* buffer, size_t size)
     json_gen_str_end(&jstr);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       text has no quotes/backslashes (see usb_desc_info.h), one line per array item
-*****************************************************************************/
+// JSON 생성기는 문자열을 이스케이프하지 않는다: 요약 텍스트는 따옴표·역슬래시가 없게 만들어져 있다(usb_desc_info.h)
 static void build_usb_info_json(char* buffer, size_t size)
 {
     json_gen_str_t jstr;
@@ -208,67 +176,13 @@ static void build_usb_info_json(char* buffer, size_t size)
     json_gen_str_end(&jstr);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       starts from the stored values so a partial message only changes what it carries
-*****************************************************************************/
-static int apply_choc_config(jparse_ctx_t* jctx)
+static int boost_result_code(uint8_t result)
 {
-    tChocConfig choc;
-    tBoostConfig boost;
-    int int_val;
-    float float_val;
-    char key[16];
-    uint8_t boost_result;
-
-    fork_settings_get_choc(&choc);
-    fork_settings_get_boost(&boost);
-
-    if (json_obj_get_int(jctx, "TRANSLATE", &int_val) == OS_SUCCESS)
-    {
-        choc.TranslateEnable = int_val ? 1 : 0;
-    }
-
-    for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
-    {
-        snprintf(key, sizeof(key), "BTN%d_ACT", (int)loop);
-        if (json_obj_get_int(jctx, key, &int_val) == OS_SUCCESS)
-        {
-            choc.Buttons[loop].Action = (uint8_t)int_val;
-        }
-
-        snprintf(key, sizeof(key), "BTN%d_PRM", (int)loop);
-        if (json_obj_get_int(jctx, key, &int_val) == OS_SUCCESS)
-        {
-            choc.Buttons[loop].Param = (uint8_t)int_val;
-        }
-    }
-
-    if (json_obj_get_float(jctx, "BOOST_OFF", &float_val) == OS_SUCCESS)
-    {
-        boost.OffDb10 = (int16_t)lroundf(float_val * 10.0f);
-    }
-
-    if (json_obj_get_float(jctx, "BOOST_ON", &float_val) == OS_SUCCESS)
-    {
-        boost.OnDb10 = (int16_t)lroundf(float_val * 10.0f);
-    }
-
-    if (json_obj_get_int(jctx, "BOOST_BOOT_OFF", &int_val) == OS_SUCCESS)
-    {
-        boost.OffAtBoot = int_val ? 1 : 0;
-    }
-
-    // 부스트 값이 틀리면 아무것도 저장하지 않는다(웹 화면이 안내 후 다시 보낸다)
-    boost_result = boost_config_check(&boost);
-    switch (boost_result)
+    switch (result)
     {
         case BOOST_CONFIG_OK:
         {
-            // all good
+            return CHOC_RESULT_OK;
         } break;
 
         case BOOST_CONFIG_ERR_RANGE:
@@ -287,20 +201,88 @@ static int apply_choc_config(jparse_ctx_t* jctx)
             return CHOC_RESULT_BOOST_ORDER;
         } break;
     }
+}
 
-    fork_settings_set_boost(&boost);
-    fork_settings_set_choc(&choc);
+// 정수 범위 밖이면 저장 형식(uint8_t·int16_t)으로 줄이기 전에 거절한다(줄이면 다른 정상 값이 되어 검사를 통과한다)
+static uint8_t read_db10(jparse_ctx_t* jctx, const char* key, int16_t* value)
+{
+    float db;
 
-    return CHOC_RESULT_OK;
+    if (json_obj_get_float(jctx, key, &db) != OS_SUCCESS)
+    {
+        return 1;
+    }
+
+    if (!isfinite(db) || (db < -100.0f) || (db > 100.0f))
+    {
+        return 0;
+    }
+
+    *value = (int16_t)lroundf(db * 10.0f);
+    return 1;
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
+* NOTES:       저장된 값에서 시작하므로 메시지에 없는 항목은 그대로 둔다
 *****************************************************************************/
+static int apply_choc_config(jparse_ctx_t* jctx)
+{
+    tChocConfig choc;
+    tBoostConfig boost;
+    int int_val;
+    char key[16];
+
+    fork_settings_get_choc(&choc);
+    fork_settings_get_boost(&boost);
+
+    if (json_obj_get_int(jctx, "TRANSLATE", &int_val) == OS_SUCCESS)
+    {
+        choc.TranslateEnable = int_val ? 1 : 0;
+    }
+
+    for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
+    {
+        snprintf(key, sizeof(key), "BTN%d_ACT", (int)loop);
+        if (json_obj_get_int(jctx, key, &int_val) == OS_SUCCESS)
+        {
+            if ((int_val < 0) || (int_val >= CHOC_ACTION_COUNT))
+            {
+                return CHOC_RESULT_BUTTON_RANGE;
+            }
+            choc.Buttons[loop].Action = (uint8_t)int_val;
+        }
+
+        snprintf(key, sizeof(key), "BTN%d_PRM", (int)loop);
+        if (json_obj_get_int(jctx, key, &int_val) == OS_SUCCESS)
+        {
+            if ((int_val < CHOC_PRESET_PARAM_MIN) || (int_val > CHOC_PRESET_PARAM_MAX))
+            {
+                return CHOC_RESULT_BUTTON_RANGE;
+            }
+            choc.Buttons[loop].Param = (uint8_t)int_val;
+        }
+    }
+
+    // packed 구조체 멤버는 주소로 넘기면 정렬이 안 맞을 수 있어 지역 변수를 거친다
+    int16_t off_db10 = boost.OffDb10;
+    int16_t on_db10 = boost.OnDb10;
+
+    if (!read_db10(jctx, "BOOST_OFF", &off_db10) || !read_db10(jctx, "BOOST_ON", &on_db10))
+    {
+        return CHOC_RESULT_BOOST_RANGE;
+    }
+    boost.OffDb10 = off_db10;
+    boost.OnDb10 = on_db10;
+
+    if (json_obj_get_int(jctx, "BOOST_BOOT_OFF", &int_val) == OS_SUCCESS)
+    {
+        boost.OffAtBoot = int_val ? 1 : 0;
+    }
+
+    // 부스트 값이 틀리면 아무것도 바꾸지 않는다(웹 화면이 안내 후 다시 보낸다)
+    return boost_result_code(fork_settings_set_all(&boost, &choc));
+}
+
 static void send_text_frame(httpd_req_t* req, const char* payload)
 {
     httpd_ws_frame_t frame;
@@ -317,11 +299,7 @@ static void send_text_frame(httpd_req_t* req, const char* payload)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       runs in the httpd task, after wifi_config.c parsed the message
+* NOTES:       httpd 태스크에서 wifi_config.c가 메시지를 파싱한 뒤 부른다
 *****************************************************************************/
 void wifi_fork_handle_ws_command(httpd_req_t* req, jparse_ctx_t* jctx, const char* command)
 {
@@ -346,14 +324,14 @@ void wifi_fork_handle_ws_command(httpd_req_t* req, jparse_ctx_t* jctx, const cha
     }
     else if (strcmp(command, "CHOCTEST") == 0)
     {
-        if (json_obj_get_int(jctx, "BUTTON", &int_val) == OS_SUCCESS)
+        if ((json_obj_get_int(jctx, "BUTTON", &int_val) == OS_SUCCESS) && (int_val >= 0) && (int_val < CHOC_BUTTON_COUNT))
         {
             choc_exec_run_button((uint8_t)int_val);
         }
     }
     else if (strcmp(command, "SETBOOST") == 0)
     {
-        // ON: 0 = off value, 1 = on value, 2 = toggle
+        // ON: 0 = OFF 값, 1 = ON 값, 2 = 토글
         if (json_obj_get_int(jctx, "ON", &int_val) == OS_SUCCESS)
         {
             if (int_val == 2)
@@ -388,11 +366,8 @@ void wifi_fork_handle_ws_command(httpd_req_t* req, jparse_ctx_t* jctx, const cha
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
 * RETURN:      JSON to broadcast, or NULL
-* NOTES:       runs in the WiFi task
+* NOTES:       wifi 태스크에서 돈다
 *****************************************************************************/
 const char* wifi_fork_build_push(uint8_t type, uint16_t value)
 {
@@ -447,19 +422,12 @@ const char* wifi_fork_build_push(uint8_t type, uint16_t value)
     return PushBuffer;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static esp_err_t fork_js_handler(httpd_req_t* req)
 {
     httpd_resp_set_type(req, "text/javascript");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
 
-    // TEXT embedding adds a trailing NUL that must not be sent
+    // TEXT 임베딩이 붙이는 끝의 NUL은 보내지 않는다
     return httpd_resp_send(req, fork_js_start, fork_js_end - fork_js_start - 1);
 }
 
@@ -471,13 +439,7 @@ static const httpd_uri_t fork_js_uri =
     .user_ctx = NULL
 };
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       must run before the wildcard handler is registered (first match wins)
-*****************************************************************************/
+// 와일드카드(/*) 핸들러보다 먼저 등록돼야 한다(먼저 맞는 핸들러가 받는다)
 void wifi_fork_register_handlers(httpd_handle_t server)
 {
     httpd_register_uri_handler(server, &fork_js_uri);

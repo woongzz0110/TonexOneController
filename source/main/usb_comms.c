@@ -269,8 +269,8 @@ void class_driver_task(void *arg)
             usb_host_get_device_descriptor(s->drv.dev_hdl, &dd);
             usb_host_get_active_config_descriptor(s->drv.dev_hdl, &cd);
 
-            // fork: keep a descriptor summary for the on-screen USB info page (usb_desc_info.c)
-            usb_desc_info_capture(s->drv.dev_hdl, dd, cd);
+            // fork: 화면·웹 USB 정보용 디스크립터 요약 (usb_desc_info.c)
+            usb_desc_info_capture(s->drv.dev_hdl);
 
             //ESP_LOGI(TAG, "USB device class %d", dd->bDeviceClass);
 
@@ -412,7 +412,7 @@ void class_driver_task(void *arg)
                     // update UI
                     control_set_usb_status(0);
 
-                    // fork: boost state is unknown until the next pedal reports its volume
+                    // fork: 다음 페달이 볼륨을 알려줄 때까지 부스트 상태는 모름 (boost_ctrl.c)
                     boost_ctrl_on_usb_disconnected();
                 }
 

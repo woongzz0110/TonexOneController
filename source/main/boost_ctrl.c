@@ -31,17 +31,10 @@ limitations under the License.
 
 static const char *TAG = "app_boost";
 
-// 보드가 아는 볼륨은 TONEX에서 한 번 읽어온 뒤에야 의미가 있다(그 전엔 tonex_params 기본값 0dB)
+// 보드가 아는 볼륨은 TONEX에서 한 번 받아온 뒤에야 의미가 있다(그 전 값으로 판정하면 틀린다)
 static volatile uint8_t VolumeKnown = 0;
 static volatile uint8_t BootOffApplied = 0;
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 uint8_t boost_ctrl_is_supported(void)
 {
     switch (usb_get_connected_modeller_type())
@@ -61,13 +54,6 @@ uint8_t boost_ctrl_is_supported(void)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 static esp_err_t read_volume(float* volume_db)
 {
     tModellerParameter* param_ptr;
@@ -84,11 +70,8 @@ static esp_err_t read_volume(float* volume_db)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
 * PARAMETERS:  volume_db: optional, current volume when known
 * RETURN:      BoostStates
-* NOTES:
 *****************************************************************************/
 uint8_t boost_ctrl_get_state(float* volume_db)
 {
@@ -109,16 +92,10 @@ uint8_t boost_ctrl_get_state(float* volume_db)
     return boost_state_for_volume(&config, volume);
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 esp_err_t boost_ctrl_set(uint8_t on, float* target_db)
 {
     tBoostConfig config;
+    tModellerParameter* param_ptr;
     float target;
 
     if (!boost_ctrl_is_supported())
@@ -134,19 +111,26 @@ esp_err_t boost_ctrl_set(uint8_t on, float* target_db)
         *target_db = target;
     }
 
-    ESP_LOGI(TAG, "boost %s -> %3.1f dB", on ? "on" : "off", target);
+    ESP_LOGD(TAG, "boost %s -> %3.1f dB", on ? "on" : "off", target);
     usb_modify_parameter(TONEX_GLOBAL_MASTER_VOLUME, target);
+
+    // One 계열은 보낸 뒤 페달에서 볼륨을 다시 읽어 오지만 빅 TONEX 경로는 되읽지 않는다.
+    // 보낸 값을 그대로 반영하지 않으면 토글이 계속 같은 쪽으로만 간다.
+    if (usb_get_connected_modeller_type() == AMP_MODELLER_TONEX)
+    {
+        if (tonex_params_get_locked_access(&param_ptr) == ESP_OK)
+        {
+            param_ptr[TONEX_GLOBAL_MASTER_VOLUME].Value = target;
+            tonex_params_release_locked_access();
+        }
+
+        boost_ctrl_on_volume_report();
+    }
 
     return ESP_OK;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       볼륨을 아직 못 읽었으면 사용자 지정으로 보고 ON으로 보낸다
-*****************************************************************************/
+// 볼륨을 아직 못 읽었으면 사용자 지정으로 보고 ON으로 보낸다
 esp_err_t boost_ctrl_toggle(uint8_t* new_state, float* target_db)
 {
     uint8_t turn_on = (boost_ctrl_get_state(NULL) != BOOST_STATE_ON);
@@ -160,11 +144,7 @@ esp_err_t boost_ctrl_toggle(uint8_t* new_state, float* target_db)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       called from USB task when the pedal reported its global volume
+* NOTES:       USB 태스크에서 불린다(페달이 볼륨을 알려줬을 때). 막히지 않아야 한다.
 *****************************************************************************/
 void boost_ctrl_on_volume_report(void)
 {
@@ -177,12 +157,7 @@ void boost_ctrl_on_volume_report(void)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       control_set_sync_complete() runs after every preset details sync,
-*              so only the first one per USB connection applies the boot volume
+* NOTES:       control_set_sync_complete()는 프리셋 동기화 때마다 불리므로 USB 연결당 처음 한 번만 적용한다
 *****************************************************************************/
 void boost_ctrl_on_sync_complete(void)
 {
@@ -201,13 +176,6 @@ void boost_ctrl_on_sync_complete(void)
     }
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 void boost_ctrl_on_usb_disconnected(void)
 {
     VolumeKnown = 0;

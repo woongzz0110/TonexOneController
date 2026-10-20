@@ -18,13 +18,6 @@ limitations under the License.
 #include <math.h>
 #include "boost.h"
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 void boost_config_set_default(tBoostConfig* config)
 {
     config->Version = BOOST_CONFIG_VERSION;
@@ -34,11 +27,7 @@ void boost_config_set_default(tBoostConfig* config)
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
 * RETURN:      BOOST_CONFIG_OK or one of BoostConfigErrors
-* NOTES:
 *****************************************************************************/
 uint8_t boost_config_check(const tBoostConfig* config)
 {
@@ -61,22 +50,12 @@ uint8_t boost_config_check(const tBoostConfig* config)
     return BOOST_CONFIG_OK;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:
-*****************************************************************************/
 float boost_db10_to_db(int16_t db10)
 {
     return (float)db10 / 10.0f;
 }
 
 /****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
 * RETURN:      BOOST_STATE_ON / BOOST_STATE_OFF / BOOST_STATE_CUSTOM
 * NOTES:       OFF < ON이 최소 한 단계 차이라 두 허용 범위는 겹치지 않는다
 *****************************************************************************/
@@ -95,13 +74,7 @@ uint8_t boost_state_for_volume(const tBoostConfig* config, float volume_db)
     return BOOST_STATE_CUSTOM;
 }
 
-/****************************************************************************
-* NAME:
-* DESCRIPTION:
-* PARAMETERS:
-* RETURN:
-* NOTES:       ON이면 OFF로, OFF나 사용자 지정이면 ON으로 간다
-*****************************************************************************/
+// ON이면 OFF로, OFF나 사용자 지정이면 ON으로 간다
 float boost_toggle_target_db(const tBoostConfig* config, float volume_db)
 {
     if (boost_state_for_volume(config, volume_db) == BOOST_STATE_ON)
