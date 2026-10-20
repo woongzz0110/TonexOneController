@@ -40,6 +40,8 @@ limitations under the License.
 #include "usb/usb_host.h"
 #include "esp_task_wdt.h"
 #include "usb_comms.h"
+#include "boost_ctrl.h"
+#include "usb_desc_info.h"
 #include "usb/cdc_acm_host.h"
 #include "usb_tonex_common.h"
 #include "usb_tonex_one.h"
@@ -267,6 +269,9 @@ void class_driver_task(void *arg)
             usb_host_get_device_descriptor(s->drv.dev_hdl, &dd);
             usb_host_get_active_config_descriptor(s->drv.dev_hdl, &cd);
 
+            // fork: keep a descriptor summary for the on-screen USB info page (usb_desc_info.c)
+            usb_desc_info_capture(s->drv.dev_hdl, dd, cd);
+
             //ESP_LOGI(TAG, "USB device class %d", dd->bDeviceClass);
 
             if (dd->bDeviceClass == 0x09) 
@@ -406,6 +411,9 @@ void class_driver_task(void *arg)
 
                     // update UI
                     control_set_usb_status(0);
+
+                    // fork: boost state is unknown until the next pedal reports its volume
+                    boost_ctrl_on_usb_disconnected();
                 }
 
                 // close device

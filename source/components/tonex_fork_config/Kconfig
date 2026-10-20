@@ -1,0 +1,21 @@
+menu "Tonex Controller Fork Features"
+
+    config TONEX_FORK_UI_800X480
+        bool
+        default y if TONEX_CONTROLLER_DISPLAY_FULL_UI && (TONEX_CONTROLLER_HARDWARE_PLATFORM_WAVESHARE_43B || TONEX_CONTROLLER_HARDWARE_PLATFORM_WAVESHARE_43DEVONLY || TONEX_CONTROLLER_HARDWARE_PLATFORM_WAVESHARE_7B || TONEX_CONTROLLER_HARDWARE_PLATFORM_JC4880P4)
+        help
+            Boost badge and FSW/USB settings tabs, created at run time on the 800x480 UI.
+
+    config TONEX_FORK_OTA_UPDATE
+        bool "Firmware update over WiFi"
+        default n
+        help
+            Accept app images at POST /update. Needs a partition table with two OTA
+            app slots (partitions_16MB_ota.csv), see sdkconfig.fork.ws43B.
+
+    config TONEX_FORK_OTA_PLATFORM_ID
+        string "Platform id embedded in, and required from, uploaded images"
+        depends on TONEX_FORK_OTA_UPDATE
+        default "WS43B"
+
+endmenu

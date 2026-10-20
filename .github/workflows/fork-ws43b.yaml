@@ -1,0 +1,49 @@
+# fork: WS43B_FORK 빌드와 설치 파일 묶음. 업스트림 ci.yaml(전 플랫폼 빌드)과 별개로 돈다.
+name: Fork WS43B build
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host tests (no hardware)
+        run: ./source/test_host/run_tests.sh
+
+      - name: esp-idf build WS43B_FORK
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          path: 'source'
+          esp_idf_version: v6.0.2
+          target: esp32s3
+          extra_docker_args: -e IDF_PRESET=WS43B_FORK
+          command: "idf.py build"
+
+      - name: Package
+        run: |
+          B=source/build/fork_ws43b
+          mkdir -p out/usb out/ota
+          cp "$B/bootloader/bootloader.bin" "$B/partition_table/partition-table.bin" "$B/ota_data_initial.bin" \
+             "$B/TonexController.bin" source/skin_images/16bit/skins.bin tools/flash_fork_ws43b.py out/usb/
+          # flat folder: keep offsets, drop directories from the file names
+          python3 tools/flatten_flasher_args.py "$B/flasher_args.json" out/usb/flasher_args.json
+          cp "$B/TonexController.bin" out/ota/
+
+      - name: Upload USB install package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ws43b-fork-usb-install
+          path: out/usb
+          if-no-files-found: error
+
+      - name: Upload WiFi update image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ws43b-fork-wifi-update
+          path: out/ota
+          if-no-files-found: error

@@ -46,6 +46,8 @@ limitations under the License.
 #include "valeton_params.h"
 #include "midi_helper.h"
 #include "leds.h"
+#include "fork_settings.h"
+#include "boost_ctrl.h"
 
 #define CTRL_TASK_STACK_SIZE                (3 * 1024)
 
@@ -2023,6 +2025,9 @@ void control_set_skin_previous(void)
 void control_set_sync_complete(void)
 {
     ControlData.SyncComplete = 1;
+
+    // fork: optional boost-off volume on first sync (boost_ctrl.c)
+    boost_ctrl_on_sync_complete();
 }
 
 /****************************************************************************
@@ -3250,6 +3255,9 @@ void control_load_config(void)
 
     // load the non-volatile user data
     LoadUserData();
+
+    // fork: settings kept under separate NVS keys (fork_settings.c)
+    fork_settings_load();
 }
 
 /****************************************************************************

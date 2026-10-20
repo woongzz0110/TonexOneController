@@ -51,6 +51,7 @@ limitations under the License.
 #include "task_priorities.h"
 #include "midi_control.h"
 #include "midi_helper.h"
+#include "choc_exec.h"
 
 static const char *TAG = "MidiBT";
 #define GATTC_TAG        "GATTC_CLIENT"
@@ -860,6 +861,9 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
                 //open failed, ignore the first device, connect the second device
                 ESP_LOGE(GATTC_TAG, "connect device failed, status %d", p_data->open.status);
                 conn_device_a = false;
+
+                // fork: Chocolate translation layer (choc_exec.c)
+                choc_exec_on_ble_disconnected();
                 break;
             }
 
@@ -1079,7 +1083,11 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
             //ESP_LOG_BUFFER_HEX(GATTC_TAG, p_data->notify.value, p_data->notify.value_len);
 
             // handle Midi data.
-            midi_helper_process_incoming_data(p_data->notify.value, p_data->notify.value_len, midi_serial_channel, control_get_config_item_int(CONFIG_ITEM_ENABLE_BT_MIDI_CC));            
+            // fork: Chocolate signals are translated to actions instead (choc_exec.c)
+            if (!choc_exec_handle_ble_midi(p_data->notify.value, p_data->notify.value_len))
+            {
+                midi_helper_process_incoming_data(p_data->notify.value, p_data->notify.value_len, midi_serial_channel, control_get_config_item_int(CONFIG_ITEM_ENABLE_BT_MIDI_CC));            
+            }
             break;
 
         case ESP_GATTC_WRITE_DESCR_EVT:
@@ -1129,6 +1137,9 @@ static void __attribute__((unused)) gattc_profile_a_event_handler(esp_gattc_cb_e
 
             // update UI to show a BT disconnected
             control_set_bt_status(0);
+
+            // fork: Chocolate translation layer (choc_exec.c)
+            choc_exec_on_ble_disconnected();
 
             if (memcmp(p_data->disconnect.remote_bda, gl_profile_tab.remote_bda, 6) == 0)
             {
@@ -1351,6 +1362,10 @@ static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
                                 {
                                     conn_device_a = true;
                                     ESP_LOGI(GATTC_TAG, "Searched device %s", remote_device_names[loop]);
+
+                                    // fork: Chocolate translation layer (choc_exec.c)
+                                    choc_exec_on_ble_connecting(remote_device_names[loop]);
+
                                     esp_ble_gap_stop_scanning();
                                     esp_ble_gattc_open(gl_profile_tab.gattc_if, scan_result->scan_rst.bda, scan_result->scan_rst.ble_addr_type, true);
                                     Isconnecting = true;

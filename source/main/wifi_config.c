@@ -48,6 +48,7 @@ limitations under the License.
 #include <esp_http_server.h>
 #include "control.h"
 #include "wifi_config.h"
+#include "wifi_fork.h"
 #include "usb_comms.h"
 #include "task_priorities.h"
 #include "tonex_params.h"
@@ -99,7 +100,8 @@ enum WiFivents
     EVENT_SYNC_PARAMS,
     EVENT_SYNC_PRESET_NAME,
     EVENT_SYNC_PRESET,
-    EVENT_SYNC_CONFIG
+    EVENT_SYNC_CONFIG,
+    EVENT_SYNC_FORK             // fork: payload built by wifi_fork.c
 };
 
 typedef struct
@@ -264,9 +266,45 @@ static uint8_t process_wifi_command(tWiFiMessage* message)
             wifi_build_config_json();
             wifi_send_ws_async(pWebConfig->TempBuffer);
         } break;    
+
+        case EVENT_SYNC_FORK:
+        {
+            const char* payload = wifi_fork_build_push((uint8_t)(message->Value >> 16), (uint16_t)(message->Value & 0xFFFF));
+
+            if (payload != NULL)
+            {
+                wifi_send_ws_async(payload);
+            }
+        } break;
     }
 
     return 1;
+}
+
+/****************************************************************************
+* NAME:        wifi_request_fork_push
+* DESCRIPTION: fork: queue a push to all web clients (built by wifi_fork.c)
+* PARAMETERS:  
+* RETURN:      
+* NOTES:       never blocks: callers include the Bluetooth and USB tasks
+*****************************************************************************/
+void wifi_request_fork_push(uint8_t type, uint16_t value)
+{
+    tWiFiMessage message;
+
+    if (wifi_input_queue == NULL)
+    {
+        return;
+    }
+
+    message.Event = EVENT_SYNC_FORK;
+    message.Value = ((uint32_t)type << 16) | value;
+    message.Text[0] = 0;
+
+    if (xQueueSend(wifi_input_queue, (void*)&message, 0) != pdPASS)
+    {
+        ESP_LOGW(TAG, "wifi_request_fork_push dropped");
+    }
 }
 
 /****************************************************************************
@@ -1412,6 +1450,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
                             }
                         }
                     }
+                    else
+                    {
+                        // fork: Footswitch/firmware/USB info commands (wifi_fork.c)
+                        wifi_fork_handle_ws_command(req, &pWebConfig->jctx, str_val);
+                    }
                 }
 
                 json_parse_end(&pWebConfig->jctx);
@@ -1941,6 +1984,10 @@ static esp_err_t http_server_init(void)
     http_config.uri_match_fn = httpd_uri_match_wildcard;    //NULL;
     http_config.lru_purge_enable = true;
 
+    // fork: /fork.js (+ /update for OTA builds), and room for the upload handler
+    http_config.max_uri_handlers += WIFI_FORK_URI_HANDLERS;
+    http_config.stack_size += WIFI_FORK_EXTRA_STACK;
+
 	if (httpd_start(&http_server, &http_config) == ESP_OK) 
     {
         if (http_server != NULL)
@@ -1950,6 +1997,10 @@ static esp_err_t http_server_init(void)
             httpd_register_uri_handler(http_server, &ws);
 
             ESP_LOGI(TAG, "Http register uri 1");
+
+            // fork: must come before the "/*" handler below (first match wins)
+            wifi_fork_register_handlers(http_server);
+
     	    //httpd_register_uri_handler(http_server, &index_get);
             httpd_register_uri_handler(http_server, &embedded_uri);           
         }

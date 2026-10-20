@@ -145,3 +145,6 @@ if(CONFIG_TONEX_CONTROLLER_HARDWARE_PLATFORM_M5ATOMS3R)
 endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -Werror)
+
+# fork: sources added by this fork
+include(${CMAKE_CURRENT_LIST_DIR}/fork.cmake)

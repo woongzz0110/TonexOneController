@@ -67,6 +67,7 @@ limitations under the License.
 #include "display.h"
 #include "wifi_config.h"
 #include "tonex_params.h"
+#include "boost_ctrl.h"
 
 static const char *TAG = "app_Tonex";
 
@@ -824,6 +825,9 @@ static TonexStatus usb_tonex_parse_global_config(uint8_t* unframed, uint16_t len
                             case GLOBAL_CONFIG_INDEX_MAIN_VOLUME:
                             {
                                 param_ptr[TONEX_GLOBAL_MASTER_VOLUME].Value = temp_val; 
+
+                                // fork: refresh boost badge/web (boost_ctrl.c), non-blocking
+                                boost_ctrl_on_volume_report();
                             } break;
 
                             // unsupported

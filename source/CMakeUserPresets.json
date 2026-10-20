@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "WS43B_FORK",
+      "binaryDir": "build/fork_ws43b",
+      "cacheVariables": {
+        "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.ws43B;sdkconfig.fork.ws43B",
+        "SDKCONFIG": "build/fork_ws43b/sdkconfig",
+        "IDF_TARGET": "esp32s3"
+      }
+    }
+  ]
+}

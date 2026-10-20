@@ -77,6 +77,7 @@ limitations under the License.
 #include "LP5562.h"
 #include "tonex_params.h"
 #include "platform_common.h"
+#include "display_fork.h"
 
 static const char *TAG = "app_display";
 
@@ -111,7 +112,8 @@ enum UIElements
     UI_ELEMENT_PARAMETERS,
     UI_ELEMENT_TOAST,
     UI_ELEMENT_TUNER_FREQ,
-    UI_ELEMENT_TUNER_STATE
+    UI_ELEMENT_TUNER_STATE,
+    UI_ELEMENT_FORK             // fork: handled by display_fork.c
 };
 
 enum UIAction
@@ -1175,6 +1177,41 @@ void UI_RefreshParameterValues(void)
 #endif    
 }
 
+/****************************************************************************
+* NAME:        UI_PostForkUpdate
+* DESCRIPTION: fork: queue an update for display_fork.c (display task)
+* PARAMETERS:  
+* RETURN:      
+* NOTES:       
+*****************************************************************************/
+void UI_PostForkUpdate(uint8_t kind, uint16_t value, const char* text)
+{
+#if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
+    tUIUpdate ui_update;
+
+    if (ui_update_queue == NULL)
+    {
+        return;
+    }
+
+    ui_update.ElementID = UI_ELEMENT_FORK;
+    ui_update.Action = kind;
+    ui_update.Value = value;
+    ui_update.Text[0] = 0;
+
+    if (text != NULL)
+    {
+        strncpy(ui_update.Text, text, MAX_UI_TEXT - 1);
+        ui_update.Text[MAX_UI_TEXT - 1] = 0;
+    }
+
+    if (xQueueSend(ui_update_queue, (void*)&ui_update, 0) != pdPASS)
+    {
+        ESP_LOGE(TAG, "UI fork update send failed!");
+    }
+#endif
+}
+
 #if CONFIG_TONEX_CONTROLLER_DISPLAY_FULL_UI
     
 /****************************************************************************
@@ -1423,6 +1460,16 @@ static  __attribute__((unused)) uint8_t update_ui_element(tUIUpdate* update)
 #if CONFIG_TONEX_CONTROLLER_DISPLAY_FULL_UI            
             updateIconOrder();
 #endif              
+
+            // fork: boost badge follows the refreshed volume
+            display_fork_on_parameters_refreshed();
+        } break;
+
+        case UI_ELEMENT_FORK:
+        {
+            // fork: Action carries the display_fork.c kind, skip the generic action handling below
+            display_fork_handle_update(update->Action, (uint16_t)update->Value, update->Text);
+            return 1;
         } break;
 
         case UI_ELEMENT_TOAST:
@@ -1953,6 +2000,9 @@ void display_init(i2c_master_bus_handle_t bus_handle, SemaphoreHandle_t I2CMutex
 
     // init toast
     ui_init_toast();
+
+    // fork: runtime-created boost badge and settings tabs (display_fork.c)
+    display_fork_init();
 
 #if CONFIG_TONEX_CONTROLLER_DISPLAY_FULL_UI
     memset((void*)&SkinTOC, 0, sizeof(SkinTOC));

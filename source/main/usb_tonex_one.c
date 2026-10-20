@@ -61,6 +61,7 @@ limitations under the License.
 #include "display.h"
 #include "wifi_config.h"
 #include "tonex_params.h"
+#include "boost_ctrl.h"
 
 static const char *TAG = "app_TonexOne";
 
@@ -904,6 +905,9 @@ static TonexStatus usb_tonex_one_parse_param_changed(uint8_t* unframed, uint16_t
                 }
 
                 ESP_LOGI(TAG, "Got global volume: raw:%3.2f  scaled:%3.2f", value, scaled_value);
+
+                // fork: refresh boost badge/web (boost_ctrl.c)
+                boost_ctrl_on_volume_report();
             }
         }
     }
