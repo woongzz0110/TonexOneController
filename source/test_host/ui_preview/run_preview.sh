@@ -1,5 +1,5 @@
 #!/bin/sh
-# 4.3B 보드 화면(메인 화면 배지·동작 알림, 설정 창 FSW·USB 탭)을 호스트에서 그려 PNG로 남긴다.
+# 4.3B 보드 화면(메인 화면 배지·동작 알림, Setup 화면 탭들)을 호스트에서 그려 PNG로 남긴다.
 # 사용: source/test_host/ui_preview/run_preview.sh [출력 폴더] [보드 빌드 폴더]
 #   보드 빌드 폴더 기본값 source/build/fork_ws43b (먼저 IDF_PRESET=WS43B_FORK idf.py build 로 sdkconfig.h를 만들어 둔다)
 set -e
@@ -41,7 +41,7 @@ fi
 echo "building preview..."
 $CC $CFLAGS -o "$OBJ/preview" \
     "$HERE/preview_main.c" "$HERE/stubs.c" "$OBJ/actions_stub_full.c" \
-    "$SOURCE/main/display_fork.c" "$SOURCE/main/usb_desc_info.c" "$SOURCE/main/boost.c" "$SOURCE/main/choc_map.c" \
+    "$SOURCE/main"/display_fork*.c "$SOURCE/main/usb_desc_info.c" "$SOURCE/main/boost.c" "$SOURCE/main/choc_map.c" \
     "$UI"/*.c "$OBJ/liblvgl.a" -lz -lm
 
 "$OBJ/preview" "$OUT"

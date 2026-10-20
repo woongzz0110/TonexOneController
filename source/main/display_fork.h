@@ -19,13 +19,14 @@ limitations under the License.
 
 #include <stdint.h>
 
-// 포크가 추가한 화면 요소: 메인 화면 BOOST 배지, 동작 알림(하단 1초), 설정 창 FSW·USB 탭.
+// 포크가 추가한 화면 요소: 메인 화면 BOOST 배지, 동작 알림(하단 1초), 상단 상태 아이콘으로 여는 Setup 화면.
 // EEZ 생성 코드(ui_generated_*)를 고치지 않고 실행 중에 LVGL 객체를 만든다.
 
 // 어느 태스크에서나 부를 수 있다(큐로 넘기고 막히지 않는다)
 void UI_ShowActionToast(const char* text);
 void UI_RefreshBoostStatus(void);
-void UI_RefreshFootswitchConfig(void);
+// 부스트·초콜릿 설정이나 초콜릿 연결 상태가 바뀌었을 때
+void UI_RefreshForkSettings(void);
 void UI_NotifyChocButton(uint8_t button);
 void UI_RefreshUsbInfo(void);
 

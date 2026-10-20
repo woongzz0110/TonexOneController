@@ -45,7 +45,7 @@ limitations under the License.
 #define USB_INFO_TEXT_SIZE          (6 * 1024)
 
 // 웹 프로토콜 값(fork.js RESULT_TEXT와 같은 순서)
-enum ChocConfigResults
+enum ForkConfigResults
 {
     CHOC_RESULT_OK,
     CHOC_RESULT_BOOST_RANGE,
@@ -76,7 +76,8 @@ static void add_boost_state(json_gen_str_t* jstr)
     }
 }
 
-static void build_choc_config_json(char* buffer, size_t size)
+// 부스트·초콜릿 설정과 상태를 한 번에 보낸다(웹 Boost·Chocolate 페이지가 같이 쓴다)
+static void build_fork_config_json(char* buffer, size_t size)
 {
     json_gen_str_t jstr;
     tChocConfig choc;
@@ -88,7 +89,7 @@ static void build_choc_config_json(char* buffer, size_t size)
 
     json_gen_str_start(&jstr, buffer, size, NULL, NULL);
     json_gen_start_object(&jstr);
-    json_gen_obj_set_string(&jstr, "CMD", "GETCHOCCONFIG");
+    json_gen_obj_set_string(&jstr, "CMD", "GETFORKCONFIG");
 
     json_gen_obj_set_int(&jstr, "TRANSLATE", choc.TranslateEnable);
     for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
@@ -104,6 +105,9 @@ static void build_choc_config_json(char* buffer, size_t size)
     json_gen_obj_set_int(&jstr, "BOOST_BOOT_OFF", boost.OffAtBoot);
 
     json_gen_obj_set_int(&jstr, "CHOC_CONNECTED", choc_exec_is_chocolate_connected());
+    // 업스트림 Bluetooth 설정: 이게 꺼져 있거나 Central이 아니면 초콜릿에 아예 연결하지 않는다
+    json_gen_obj_set_int(&jstr, "BT_CHOC_EN", control_get_config_item_int(CONFIG_ITEM_MV_CHOC_ENABLE));
+    json_gen_obj_set_int(&jstr, "BT_MODE", control_get_config_item_int(CONFIG_ITEM_BT_MODE));
     json_gen_obj_set_int(&jstr, "MAX_PRESETS", usb_get_max_presets_for_connected_modeller());
     add_boost_state(&jstr);
 
@@ -226,7 +230,7 @@ static uint8_t read_db10(jparse_ctx_t* jctx, const char* key, int16_t* value)
 /****************************************************************************
 * NOTES:       저장된 값에서 시작하므로 메시지에 없는 항목은 그대로 둔다
 *****************************************************************************/
-static int apply_choc_config(jparse_ctx_t* jctx)
+static int apply_fork_config(jparse_ctx_t* jctx)
 {
     tChocConfig choc;
     tBoostConfig boost;
@@ -315,13 +319,13 @@ void wifi_fork_handle_ws_command(httpd_req_t* req, jparse_ctx_t* jctx, const cha
     }
     buffer[0] = 0;
 
-    if (strcmp(command, "GETCHOCCONFIG") == 0)
+    if (strcmp(command, "GETFORKCONFIG") == 0)
     {
-        build_choc_config_json(buffer, RESPONSE_BUFFER_SIZE);
+        build_fork_config_json(buffer, RESPONSE_BUFFER_SIZE);
     }
-    else if (strcmp(command, "SETCHOCCONFIG") == 0)
+    else if (strcmp(command, "SETFORKCONFIG") == 0)
     {
-        build_result_json(buffer, RESPONSE_BUFFER_SIZE, "CHOCCONFIGRESULT", apply_choc_config(jctx));
+        build_result_json(buffer, RESPONSE_BUFFER_SIZE, "FORKCONFIGRESULT", apply_fork_config(jctx));
     }
     else if (strcmp(command, "CHOCTEST") == 0)
     {
@@ -385,9 +389,9 @@ const char* wifi_fork_build_push(uint8_t type, uint16_t value)
 
     switch (type)
     {
-        case WIFI_FORK_PUSH_CHOC_CONFIG:
+        case WIFI_FORK_PUSH_CONFIG:
         {
-            build_choc_config_json(PushBuffer, PUSH_BUFFER_SIZE);
+            build_fork_config_json(PushBuffer, PUSH_BUFFER_SIZE);
         } break;
 
         case WIFI_FORK_PUSH_BOOST_STATE:

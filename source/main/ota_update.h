@@ -29,3 +29,5 @@ uint8_t ota_update_is_available(void);
 uint8_t ota_update_is_pending_verify(void);
 const char* ota_update_platform_id(void);
 esp_err_t ota_update_register(httpd_handle_t server);
+// 버전·빌드·실행 슬롯·업데이트 방법 (여러 줄)
+void ota_update_describe_firmware(char* buffer, size_t size);

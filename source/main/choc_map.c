@@ -45,7 +45,7 @@ static const char* ActionNames[CHOC_ACTION_COUNT] =
     "Gate On/Off"
 };
 
-static const char* ButtonNames[CHOC_BUTTON_COUNT] = {"A", "B", "C", "D", "A+B", "C+D"};
+static const char* ButtonNames[CHOC_BUTTON_COUNT] = {"A", "B", "C", "D", "E", "F"};
 
 static uint8_t midi_data_length(uint8_t status)
 {

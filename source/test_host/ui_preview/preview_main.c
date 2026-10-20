@@ -10,6 +10,8 @@
 #include "display_fork.h"
 #include "usb_desc_info.h"
 #include "choc_map.h"
+#include "fork_settings.h"
+#include "control.h"
 #include "preview.h"
 
 #define WIDTH   800
@@ -135,6 +137,29 @@ static lv_obj_t* find_child_of_class(lv_obj_t* parent, const lv_obj_class_t* cls
     return NULL;
 }
 
+// Setup 화면은 display_fork_setup.c가 만든다: 첫 자식이 탭뷰
+static lv_obj_t* setup_tabview(void)
+{
+    return find_child_of_class(lv_scr_act(), &lv_tabview_class, 0);
+}
+
+enum SetupTabs { TAB_BOOST, TAB_CHOC, TAB_BT, TAB_MIDI, TAB_MISC, TAB_WIFI, TAB_INFO };
+
+static lv_obj_t* show_setup_tab(uint32_t index)
+{
+    lv_obj_t* tabview = setup_tabview();
+
+    lv_tabview_set_act(tabview, index, LV_ANIM_OFF);
+    pump(50);
+    return lv_obj_get_child(lv_tabview_get_content(tabview), (int32_t)index);
+}
+
+static void select_dropdown(lv_obj_t* dropdown, uint16_t index)
+{
+    lv_dropdown_set_selected(dropdown, index);
+    lv_event_send(dropdown, LV_EVENT_VALUE_CHANGED, NULL);
+}
+
 static void set_sample_main_screen(void)
 {
     // 업스트림 화면의 다른 칸은 보드가 동기화 뒤 채우는 값이라, 배치 확인용 예시 문구를 넣는다
@@ -148,8 +173,10 @@ int main(int argc, char** argv)
 {
     static lv_disp_draw_buf_t draw_buf;
     static lv_disp_drv_t disp_drv;
-    lv_obj_t* fsw_tab;
+    lv_obj_t* tab;
     lv_obj_t* dropdown;
+    lv_obj_t* zone;
+    tChocConfig choc;
 
     if (argc > 1)
     {
@@ -200,31 +227,66 @@ int main(int argc, char** argv)
     UI_RefreshBoostStatus();
     capture("05_main_custom.png");
 
-    // 6) 설정 창 FSW 탭, 버튼 A를 막 밟은 상태
-    lv_scr_load(objects.settings);
-    lv_tabview_set_act(objects.ui_settings_tab_view, 8, LV_ANIM_OFF);
-    pump(100);
-    UI_NotifyChocButton(CHOC_BUTTON_A);
-    capture("06_settings_fsw_tab.png");
+    // 6) Setup 화면 여는 자리: 상단 상태 아이콘을 누르고 있는 모습
+    PreviewVolume = 3.0f;
+    UI_RefreshBoostStatus();
+    zone = lv_obj_get_child(objects.ui_touch_gesture_container, -1);
+    lv_obj_add_state(zone, LV_STATE_PRESSED);
+    capture("06_main_setup_entry_pressed.png");
+    lv_obj_clear_state(zone, LV_STATE_PRESSED);
 
-    // 7) 드롭다운 펼침(버튼 A)
-    fsw_tab = lv_tabview_get_content(objects.ui_settings_tab_view);
-    fsw_tab = lv_obj_get_child(fsw_tab, 8);
-    dropdown = find_child_of_class(fsw_tab, &lv_dropdown_class, 0);
-    if (dropdown != NULL)
-    {
-        lv_dropdown_open(dropdown);
-    }
-    capture("07_settings_fsw_dropdown.png");
-    if (dropdown != NULL)
-    {
-        lv_dropdown_close(dropdown);
-    }
-
-    // 8) USB 탭: 합성 예시 장치(TONEX 실데이터 아님)의 디스크립터 요약
+    // 7) Setup > Boost
     usb_desc_info_capture((usb_device_handle_t)1);
-    lv_tabview_set_act(objects.ui_settings_tab_view, 9, LV_ANIM_OFF);
-    capture("08_settings_usb_tab_sample.png");
+    lv_event_send(zone, LV_EVENT_CLICKED, NULL);
+    pump(100);
+    show_setup_tab(TAB_BOOST);
+    capture("07_setup_boost.png");
+
+    // 8) Setup > Choc: 초콜릿 연결됨, C는 프리셋 직접 선택(5번), A를 막 밟은 상태
+    fork_settings_get_choc(&choc);
+    choc.Buttons[CHOC_BUTTON_C].Action = CHOC_ACTION_PRESET_SELECT;
+    choc.Buttons[CHOC_BUTTON_C].Param = 5;
+    fork_settings_set_choc(&choc);
+    tab = show_setup_tab(TAB_CHOC);
+    UI_NotifyChocButton(CHOC_BUTTON_A);
+    capture("08_setup_choc.png");
+
+    // 9) 동작 목록 펼침(버튼 F): 항목이 많아도 목록 높이는 묶이고 끌어서 스크롤
+    dropdown = find_child_of_class(tab, &lv_dropdown_class, CHOC_BUTTON_F);
+    lv_dropdown_open(dropdown);
+    capture("09_setup_choc_dropdown.png");
+    lv_dropdown_close(dropdown);
+
+    // 10) 초콜릿이 안 붙었고 BT 설정에서 꺼져 있을 때의 안내
+    PreviewChocConnected = 0;
+    preview_set_config(CONFIG_ITEM_MV_CHOC_ENABLE, 0);
+    UI_RefreshForkSettings();
+    capture("10_setup_choc_not_connected.png");
+    preview_set_config(CONFIG_ITEM_MV_CHOC_ENABLE, 1);
+    PreviewChocConnected = 1;
+    UI_RefreshForkSettings();
+
+    // 11~13) 업스트림 설정: BT · MIDI · Misc
+    show_setup_tab(TAB_BT);
+    capture("11_setup_bt.png");
+    show_setup_tab(TAB_MIDI);
+    capture("12_setup_midi.png");
+    show_setup_tab(TAB_MISC);
+    capture("13_setup_misc.png");
+
+    // 14) Wi-Fi: 모드를 바꿔 저장 전 상태
+    tab = show_setup_tab(TAB_WIFI);
+    select_dropdown(find_child_of_class(tab, &lv_dropdown_class, 0), 1);
+    capture("14_setup_wifi_changed.png");
+
+    // 15) Save & Reboot 확인 창
+    lv_event_send(find_child_of_class(tab, &lv_btn_class, 0), LV_EVENT_CLICKED, NULL);
+    capture("15_setup_save_confirm.png");
+
+    // 16) Info: 펌웨어 + 합성 예시 장치(TONEX 실데이터 아님)의 USB 요약
+    lv_obj_clean(lv_layer_top());
+    show_setup_tab(TAB_INFO);
+    capture("16_setup_info.png");
 
     return 0;
 }

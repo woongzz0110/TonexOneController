@@ -1,4 +1,4 @@
-// 포크 추가 웹 화면: Config > Footswitch, Config > Firmware.
+// 포크 추가 웹 화면: 상단 메뉴 Boost, Config > Chocolate, Config > Firmware.
 // 업스트림 script.js를 고치지 않고 processReturnCmd()를 감싸서 덧붙인다(업스트림 병합 충돌 최소화).
 // 상수 값은 펌웨어 choc_map.h / boost.h 와 같아야 한다.
 
@@ -21,15 +21,10 @@
         '노이즈게이트 On/Off'
     ];
     const CHOC_ACTION_PRESET_SELECT = 7;
+    const CHOC_BUTTONS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-    const CHOC_BUTTONS = [
-        { name: 'A', desc: '버튼 A' },
-        { name: 'B', desc: '버튼 B' },
-        { name: 'C', desc: '버튼 C' },
-        { name: 'D', desc: '버튼 D' },
-        { name: 'E', desc: 'A + B 동시' },
-        { name: 'F', desc: 'C + D 동시' }
-    ];
+    // 업스트림 Bluetooth 설정 값
+    const BT_MODE_CENTRAL = 1;
 
     const BOOST_MIN_DB = -40;
     const BOOST_MAX_DB = 3;
@@ -38,7 +33,7 @@
     const BOOST_STATE_TEXT = ['BOOST OFF', 'BOOST ON', 'CUSTOM', 'BOOST --'];
     const BOOST_STATE_CLASS = ['fork-badge-off', 'fork-badge-on', 'fork-badge-custom', 'fork-badge-unknown'];
 
-    // wifi_fork.c ChocConfigResults 순서
+    // wifi_fork.c ForkConfigResults 순서
     const RESULT_TEXT = [
         '저장했습니다. 바로 적용됩니다.',
         '부스트 값은 -40 ~ +3 dB 범위여야 합니다.',
@@ -56,8 +51,12 @@
     const APP_PROJECT_NAME_OFFSET = APP_DESC_OFFSET + 48;
     const APP_PROJECT_NAME = 'TonexController';
 
-    let formDirty = false;
-    let configLoaded = false;
+    // 두 페이지가 같은 설정 메시지(GETFORKCONFIG)를 받으므로, 손대는 중인 페이지는 그 페이지 값이 실제로 바뀌었을 때만 알린다
+    const pages = {
+        boost: { dirty: false, loaded: false, note: 'fork_boost_note', keys: /^BOOST_(OFF|ON|BOOT_OFF)$/, snapshot: '' },
+        choc: { dirty: false, loaded: false, note: 'fork_choc_note', keys: /^(TRANSLATE|BTN\d_(ACT|PRM))$/, snapshot: '' }
+    };
+    let savingPage = null;
     let maxPresets = 20;
     let otaMaxSize = 0;
     let otaPlatform = '';
@@ -70,12 +69,14 @@
 
     // ------------------------------------------------------------------ page
 
+    // 상단 메뉴에 Boost가 붙으면 휴대폰 폭(375px)을 넘어 Config가 화면 밖으로 밀리므로, 좁은 화면에서만 줄을 넘긴다
     const STYLE = `
+        @media (max-width: 480px) { #nav-items-list { flex-wrap: wrap; } }
         .fork-rows { border: 1px solid #373737; border-radius: 6px; margin-bottom: 12px; }
         .fork-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid #373737; }
         .fork-row:last-child { border-bottom: none; }
         .fork-row.fork-hit { background-color: #513d2b; transition: background-color 0.2s; }
-        .fork-row .fork-name { flex: 0 0 60px; font-size: 0.9rem; }
+        .fork-row .fork-name { flex: 0 0 32px; font-size: 1.1rem; font-weight: 600; text-align: center; }
         .fork-row .btn { white-space: nowrap; }
         .fork-row .fork-action { flex: 1 1 auto; min-width: 0; }
         .fork-row .fork-preset { flex: 0 0 72px; width: 72px; padding-left: 6px; padding-right: 6px; }
@@ -87,17 +88,59 @@
         .fork-badge-unknown { background: transparent; color: #888; border-color: #555; }
         .fork-note { color: #fb9230; min-height: 1.5em; }
         .fork-muted { color: #999; font-size: 0.9rem; }
+        .fork-ok { color: #6cc24a; }
         .fork-num { max-width: 110px; display: inline-block; }
+        #ForkBoost .form-check-label, #ForkChocolate .form-check-label { margin-left: 8px; }
+        .fork-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
+        .fork-field { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin: 0; }
         #fork_usb_info { background: #111; color: #ddd; padding: 8px; font-size: 0.8rem; max-height: 420px;
                          overflow: auto; white-space: pre; }
     `;
 
-    function buildFootswitchSection() {
-        const rows = CHOC_BUTTONS.map((button, index) => `
+    function buildBoostSection() {
+        return `
+        <div id="ForkBoost" class="content-section">
+            <div class="col py-3 text-white">
+                <h5 class="selected_text">Boost</h5>
+                <div class="container">
+                    <p class="fork-muted">TONEX 글로벌 볼륨을 두 값(OFF / ON) 사이에서 바꿔 솔로 부스트로 씁니다.
+                       초콜릿 버튼이나 아래 버튼으로 켜고 끕니다.</p>
+                    <p>
+                        <span id="fork_badge" class="fork-badge fork-badge-unknown">BOOST --</span>
+                        &nbsp;<span id="fork_volume" class="fork-muted"></span>
+                        &nbsp;<button type="button" class="btn btn-sm btn-warning" id="fork_boost_toggle">부스트 토글</button>
+                    </p>
+
+                    <div class="fork-fields">
+                        <label class="fork-field" for="fork_boost_off">OFF 값
+                            <input type="number" class="form-control text_entry_style fork-num" id="fork_boost_off"
+                                   min="${BOOST_MIN_DB}" max="${BOOST_MAX_DB}" step="${BOOST_STEP_DB}"> dB</label>
+                        <label class="fork-field" for="fork_boost_on">ON 값
+                            <input type="number" class="form-control text_entry_style fork-num" id="fork_boost_on"
+                                   min="${BOOST_MIN_DB}" max="${BOOST_MAX_DB}" step="${BOOST_STEP_DB}"> dB</label>
+                        <span class="fork-field fork-muted">부스트 양 <span id="fork_boost_amount">-</span></span>
+                    </div>
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="fork_boot_off">
+                        <label class="form-check-label" for="fork_boot_off">OFF로 시작</label>
+                    </div>
+                    <p class="fork-muted">켜 두면 TONEX가 연결될 때마다 볼륨을 OFF 값으로 맞춥니다.</p>
+                    <p class="fork-muted">범위 -40 ~ +3 dB, 0.5 dB 단위, OFF &lt; ON. 화면의 dB는 TONEX One 0~10 볼륨을 -40~+3으로 환산한 값입니다.</p>
+                    <p class="fork-note" id="fork_boost_note"></p>
+
+                    <button type="button" class="btn btn-success" id="fork_boost_save">저장 (즉시 적용)</button>
+                    <button type="button" class="btn btn-secondary" id="fork_boost_reload">다시 불러오기</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function buildChocolateSection() {
+        const rows = CHOC_BUTTONS.map((name, index) => `
             <div class="fork-row" id="fork_row_${index}">
-                <div class="fork-name"><b>${button.name}</b><br><span class="fork-muted">${button.desc}</span></div>
+                <div class="fork-name">${name}</div>
                 <select class="form-select select_style fork-action" id="fork_act_${index}">
-                    ${CHOC_ACTIONS.map((name, value) => `<option value="${value}">${name}</option>`).join('')}
+                    ${CHOC_ACTIONS.map((label, value) => `<option value="${value}">${label}</option>`).join('')}
                 </select>
                 <input type="number" class="form-control text_entry_style fork-preset" id="fork_prm_${index}"
                        min="1" max="20" step="1" value="1" title="프리셋 번호" placeholder="번호">
@@ -105,47 +148,26 @@
             </div>`).join('');
 
         return `
-        <div id="ForkFootswitch" class="content-section">
+        <div id="ForkChocolate" class="content-section">
             <div class="col py-3 text-white">
-                <h5 class="selected_text">Footswitch (M-Vave Chocolate)</h5>
+                <h5 class="selected_text">M-Vave Chocolate</h5>
                 <div class="container">
-                    <p>
-                        <span id="fork_badge" class="fork-badge fork-badge-unknown">BOOST --</span>
-                        &nbsp;<span id="fork_volume" class="fork-muted"></span>
-                        &nbsp;<button type="button" class="btn btn-sm btn-warning" id="fork_boost_toggle">부스트 토글</button>
-                    </p>
-                    <p class="fork-muted" id="fork_choc_status">초콜릿 연결 상태 확인 중…</p>
+                    <p id="fork_choc_status" class="fork-muted">연결 상태 확인 중…</p>
 
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" role="switch" id="fork_translate">
-                        <label class="form-check-label" for="fork_translate">번역 사용 (끄면 초콜릿 신호를 원래 MIDI 처리로 보냄)</label>
+                        <label class="form-check-label" for="fork_translate">버튼 매핑 사용</label>
                     </div>
-                    <br>
+                    <p class="fork-muted">켜면 초콜릿 버튼이 아래 동작을 실행합니다. 끄면 초콜릿 MIDI를 다른 MIDI 장치와 같이
+                       기존 방식(PC = 프리셋 선택, CC = Midi 설정)으로 처리합니다.</p>
 
                     <div class="fork-rows">${rows}</div>
-                    <p class="fork-muted">'프리셋 직접 선택'을 고르면 그 줄에 프리셋 번호 칸이 나타납니다. '실행'은 초콜릿 버튼을 누른 것과 같습니다.</p>
+                    <p class="fork-muted">CubeSuite에서 초콜릿을 Program change A 모드로 두세요. E는 A+B, F는 C+D를 함께 누른 것입니다.
+                       '프리셋 직접 선택'을 고르면 그 줄에 프리셋 번호 칸이 나타나고, '실행'은 그 버튼을 누른 것과 같습니다.</p>
+                    <p class="fork-note" id="fork_choc_note"></p>
 
-                    <h6 class="selected_text">볼륨 부스트</h6>
-                    <div class="row g-2 align-items-center">
-                        <div class="col-auto"><label for="fork_boost_off">부스트 OFF</label></div>
-                        <div class="col-auto"><input type="number" class="form-control text_entry_style fork-num" id="fork_boost_off"
-                             min="${BOOST_MIN_DB}" max="${BOOST_MAX_DB}" step="${BOOST_STEP_DB}"></div>
-                        <div class="col-auto">dB</div>
-                        <div class="col-auto"><label for="fork_boost_on">부스트 ON</label></div>
-                        <div class="col-auto"><input type="number" class="form-control text_entry_style fork-num" id="fork_boost_on"
-                             min="${BOOST_MIN_DB}" max="${BOOST_MAX_DB}" step="${BOOST_STEP_DB}"></div>
-                        <div class="col-auto">dB</div>
-                        <div class="col-auto fork-muted">부스트 양 <span id="fork_boost_amount">-</span></div>
-                    </div>
-                    <div class="form-check form-switch mt-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="fork_boot_off">
-                        <label class="form-check-label" for="fork_boot_off">부팅 시 OFF 값으로 시작</label>
-                    </div>
-                    <p class="fork-muted">범위 -40 ~ +3 dB, 0.5 dB 단위, OFF &lt; ON. 화면의 dB는 TONEX One 0~10 볼륨을 -40~+3으로 환산한 값입니다.</p>
-                    <p class="fork-note" id="fork_note"></p>
-
-                    <button type="button" class="btn btn-success" id="fork_save">저장 (즉시 적용)</button>
-                    <button type="button" class="btn btn-secondary" id="fork_reload">다시 불러오기</button>
+                    <button type="button" class="btn btn-success" id="fork_choc_save">저장 (즉시 적용)</button>
+                    <button type="button" class="btn btn-secondary" id="fork_choc_reload">다시 불러오기</button>
                 </div>
             </div>
         </div>`;
@@ -172,7 +194,7 @@
 
                     <br><br>
                     <h6 class="selected_text">USB 정보 (튜너 가능성 확인)</h6>
-                    <p class="fork-muted">TONEX One이 보드에 알려준 USB 구성입니다. 보드 화면 설정의 USB 탭과 같은 내용입니다.</p>
+                    <p class="fork-muted">TONEX One이 보드에 알려준 USB 구성입니다. 보드 Setup 화면 Info 탭과 같은 내용입니다.</p>
                     <button type="button" class="btn btn-secondary" id="fork_usb_refresh">새로고침</button>
                     <button type="button" class="btn btn-secondary" id="fork_usb_copy">복사</button>
                     <pre id="fork_usb_info" class="mt-2">-</pre>
@@ -181,31 +203,34 @@
         </div>`;
     }
 
+    function reloadPage(page) {
+        pages[page].dirty = false;
+        document.getElementById(pages[page].note).textContent = '';
+        sendWS({ CMD: 'GETFORKCONFIG' });
+    }
+
     function injectPage() {
         const style = document.createElement('style');
         style.textContent = STYLE;
         document.head.appendChild(style);
 
         const wrapper = document.querySelector('.content-wrapper');
-        wrapper.insertAdjacentHTML('beforeend', buildFootswitchSection() + buildFirmwareSection());
+        wrapper.insertAdjacentHTML('beforeend', buildBoostSection() + buildChocolateSection() + buildFirmwareSection());
 
-        CHOC_BUTTONS.forEach((button, index) => {
-            document.getElementById(`fork_act_${index}`).addEventListener('change', () => { formDirty = true; updatePresetFields(); });
-            document.getElementById(`fork_prm_${index}`).addEventListener('input', () => { formDirty = true; });
+        CHOC_BUTTONS.forEach((name, index) => {
+            document.getElementById(`fork_act_${index}`).addEventListener('change', () => { pages.choc.dirty = true; updatePresetFields(); });
+            document.getElementById(`fork_prm_${index}`).addEventListener('input', () => { pages.choc.dirty = true; });
             document.getElementById(`fork_test_${index}`).addEventListener('click', () => sendWS({ CMD: 'CHOCTEST', BUTTON: index }));
         });
+        document.getElementById('fork_translate').addEventListener('change', () => { pages.choc.dirty = true; });
+        document.getElementById('fork_choc_save').addEventListener('click', saveChocolate);
+        document.getElementById('fork_choc_reload').addEventListener('click', () => reloadPage('choc'));
 
-        ['fork_translate', 'fork_boot_off'].forEach(id =>
-            document.getElementById(id).addEventListener('change', () => { formDirty = true; }));
+        document.getElementById('fork_boot_off').addEventListener('change', () => { pages.boost.dirty = true; });
         ['fork_boost_off', 'fork_boost_on'].forEach(id =>
-            document.getElementById(id).addEventListener('input', () => { formDirty = true; updateBoostAmount(); validateBoost(); }));
-
-        document.getElementById('fork_save').addEventListener('click', saveChocConfig);
-        document.getElementById('fork_reload').addEventListener('click', () => {
-            formDirty = false;
-            document.getElementById('fork_note').textContent = '';
-            sendWS({ CMD: 'GETCHOCCONFIG' });
-        });
+            document.getElementById(id).addEventListener('input', () => { pages.boost.dirty = true; updateBoostAmount(); validateBoost(); }));
+        document.getElementById('fork_boost_save').addEventListener('click', saveBoost);
+        document.getElementById('fork_boost_reload').addEventListener('click', () => reloadPage('boost'));
         document.getElementById('fork_boost_toggle').addEventListener('click', () => sendWS({ CMD: 'SETBOOST', ON: 2 }));
 
         document.getElementById('fork_fw_upload').addEventListener('click', uploadFirmware);
@@ -220,17 +245,32 @@
             section.classList.add('active');
         }
 
-        if (target === 'ForkFootswitch') {
-            sendWS({ CMD: 'GETCHOCCONFIG' });
+        // 휴대폰 폭에서 펼친 메뉴를 닫는다(업스트림 메뉴와 같은 동작)
+        const navbar = document.querySelector('.navbar-collapse');
+        if (navbar && navbar.classList.contains('show') && typeof bootstrap !== 'undefined') {
+            bootstrap.Collapse.getInstance(navbar)?.hide();
+        }
+
+        if ((target === 'ForkBoost') || (target === 'ForkChocolate')) {
+            sendWS({ CMD: 'GETFORKCONFIG' });
         } else if (target === 'ForkFirmware') {
             sendWS({ CMD: 'GETFWINFO' });
             sendWS({ CMD: 'GETUSBINFO' });
         }
     }
 
+    function menuLink(target, label, className) {
+        const li = document.createElement('li');
+        li.className = (className === 'nav-link') ? 'nav-item' : '';
+        li.innerHTML = `<a class="${className} menu-link" data-target="${target}" href="#">${label}</a>`;
+        li.firstChild.onclick = e => { e.preventDefault(); showSection(target); };
+        return li;
+    }
+
     // 업스트림이 GETMODELLERDATA마다 메뉴를 다시 만들므로 매번 덧붙인다
     function addMenuItems() {
         const toggles = document.querySelectorAll('#nav-items-list .dropdown-toggle');
+        const globals = document.querySelector('#nav-items-list [data-target="Global"]');
         let configMenu = null;
 
         toggles.forEach(toggle => {
@@ -243,13 +283,14 @@
             return;
         }
 
-        const items = (modellerIsTonex() ? [['ForkFootswitch', 'Footswitch']] : []).concat([['ForkFirmware', 'Firmware']]);
-        items.forEach(([target, label]) => {
-            const li = document.createElement('li');
-            li.innerHTML = `<a class="dropdown-item menu-link" data-target="${target}" href="#">${label}</a>`;
-            li.firstChild.onclick = e => { e.preventDefault(); showSection(target); };
-            configMenu.appendChild(li);
-        });
+        // 부스트·버튼 매핑은 TONEX 계열에서만 동작한다(Valeton 메뉴에는 Global 항목이 없다)
+        if (modellerIsTonex()) {
+            if (globals) {
+                globals.parentElement.after(menuLink('ForkBoost', 'Boost', 'nav-link'));
+            }
+            configMenu.appendChild(menuLink('ForkChocolate', 'Chocolate', 'dropdown-item'));
+        }
+        configMenu.appendChild(menuLink('ForkFirmware', 'Firmware', 'dropdown-item'));
         menuAdded = true;
     }
 
@@ -258,16 +299,7 @@
                (modellerType !== AMP_MODELLER_VALETON_GP5);
     }
 
-    // ------------------------------------------------------------------ footswitch
-
-    function updatePresetFields() {
-        CHOC_BUTTONS.forEach((button, index) => {
-            const action = parseInt(document.getElementById(`fork_act_${index}`).value);
-            const field = document.getElementById(`fork_prm_${index}`);
-            field.style.display = (action === CHOC_ACTION_PRESET_SELECT) ? '' : 'none';
-            field.max = maxPresets;
-        });
-    }
+    // ------------------------------------------------------------------ boost
 
     function readBoostInputs() {
         return {
@@ -293,7 +325,7 @@
     // returns null if OK, else the message to show
     function validateBoost() {
         const boost = readBoostInputs();
-        const note = document.getElementById('fork_note');
+        const note = document.getElementById('fork_boost_note');
         let message = null;
 
         if (isNaN(boost.off) || isNaN(boost.on)) {
@@ -318,54 +350,55 @@
         return message;
     }
 
-    function applyChocConfig(data) {
-        maxPresets = data['MAX_PRESETS'] || 20;
-        updateStatus(data);
-
-        // 첫 응답은 항상 채운다(그 전에 손댄 값이 있어도 기본값이 남지 않게)
-        if (formDirty && configLoaded) {
-            document.getElementById('fork_note').textContent = '보드에서 설정이 바뀌었습니다. 저장하면 이 화면 값으로 덮어씁니다(다시 불러오기로 보드 값 확인).';
-            return;
-        }
-
-        document.getElementById('fork_translate').checked = data['TRANSLATE'] === 1;
-        CHOC_BUTTONS.forEach((button, index) => {
-            document.getElementById(`fork_act_${index}`).value = data[`BTN${index}_ACT`];
-            document.getElementById(`fork_prm_${index}`).value = data[`BTN${index}_PRM`];
-        });
-        document.getElementById('fork_boost_off').value = Number(data['BOOST_OFF']).toFixed(1);
-        document.getElementById('fork_boost_on').value = Number(data['BOOST_ON']).toFixed(1);
-        document.getElementById('fork_boot_off').checked = data['BOOST_BOOT_OFF'] === 1;
-
-        updatePresetFields();
-        updateBoostAmount();
-        configLoaded = true;
-        formDirty = false;
-    }
-
-    function updateStatus(data) {
-        if ('CHOC_CONNECTED' in data) {
-            document.getElementById('fork_choc_status').textContent =
-                data['CHOC_CONNECTED'] ? '초콜릿 연결됨' : '초콜릿 연결 안 됨 (보드 BT 모드 Central, Chocolate 켜짐인지 확인)';
-        }
-
-        if ('BOOST_STATE' in data) {
-            const state = (data['BOOST_STATE'] >= 0 && data['BOOST_STATE'] <= 3) ? data['BOOST_STATE'] : 3;
-            const badge = document.getElementById('fork_badge');
-            badge.textContent = BOOST_STATE_TEXT[state];
-            badge.className = 'fork-badge ' + BOOST_STATE_CLASS[state];
-            document.getElementById('fork_volume').textContent =
-                ('VOLUME' in data) ? '현재 볼륨 ' + formatDb(Number(data['VOLUME'])) : (data['BOOST_SUPPORTED'] ? '볼륨 읽는 중…' : 'TONEX 연결 안 됨');
-        }
-    }
-
-    function saveChocConfig() {
+    function saveBoost() {
         if (validateBoost() !== null) {
             return;
         }
 
-        const message = { CMD: 'SETCHOCCONFIG' };
         const boost = readBoostInputs();
+        savingPage = 'boost';
+        sendWS({
+            CMD: 'SETFORKCONFIG',
+            BOOST_OFF: boost.off,
+            BOOST_ON: boost.on,
+            BOOST_BOOT_OFF: document.getElementById('fork_boot_off').checked ? 1 : 0
+        });
+    }
+
+    function applyBoostConfig(data) {
+        document.getElementById('fork_boost_off').value = Number(data['BOOST_OFF']).toFixed(1);
+        document.getElementById('fork_boost_on').value = Number(data['BOOST_ON']).toFixed(1);
+        document.getElementById('fork_boot_off').checked = data['BOOST_BOOT_OFF'] === 1;
+        updateBoostAmount();
+    }
+
+    function updateBoostState(data) {
+        if (!('BOOST_STATE' in data)) {
+            return;
+        }
+
+        const state = (data['BOOST_STATE'] >= 0 && data['BOOST_STATE'] <= 3) ? data['BOOST_STATE'] : 3;
+        const badge = document.getElementById('fork_badge');
+        badge.textContent = BOOST_STATE_TEXT[state];
+        badge.className = 'fork-badge ' + BOOST_STATE_CLASS[state];
+        document.getElementById('fork_volume').textContent =
+            ('VOLUME' in data) ? '현재 볼륨 ' + formatDb(Number(data['VOLUME'])) : (data['BOOST_SUPPORTED'] ? '볼륨 읽는 중…' : 'TONEX 연결 안 됨');
+        document.getElementById('fork_boost_toggle').disabled = !data['BOOST_SUPPORTED'];
+    }
+
+    // ------------------------------------------------------------------ chocolate
+
+    function updatePresetFields() {
+        CHOC_BUTTONS.forEach((name, index) => {
+            const action = parseInt(document.getElementById(`fork_act_${index}`).value);
+            const field = document.getElementById(`fork_prm_${index}`);
+            field.style.display = (action === CHOC_ACTION_PRESET_SELECT) ? '' : 'none';
+            field.max = maxPresets;
+        });
+    }
+
+    function saveChocolate() {
+        const message = { CMD: 'SETFORKCONFIG' };
 
         message['TRANSLATE'] = document.getElementById('fork_translate').checked ? 1 : 0;
         for (let index = 0; index < CHOC_BUTTONS.length; index++) {
@@ -373,7 +406,7 @@
             let preset = parseInt(document.getElementById(`fork_prm_${index}`).value);
 
             if (action === CHOC_ACTION_PRESET_SELECT && (isNaN(preset) || preset < 1 || preset > maxPresets)) {
-                document.getElementById('fork_note').textContent = `${CHOC_BUTTONS[index].name}: 프리셋 번호는 1 ~ ${maxPresets} 입니다.`;
+                document.getElementById('fork_choc_note').textContent = `${CHOC_BUTTONS[index]}: 프리셋 번호는 1 ~ ${maxPresets} 입니다.`;
                 return;
             }
             // 숨겨진 칸에 남은 값 때문에 저장 전체가 거절되지 않게 한다(보드는 1 ~ 150만 받는다)
@@ -384,11 +417,77 @@
             message[`BTN${index}_ACT`] = action;
             message[`BTN${index}_PRM`] = preset;
         }
-        message['BOOST_OFF'] = boost.off;
-        message['BOOST_ON'] = boost.on;
-        message['BOOST_BOOT_OFF'] = document.getElementById('fork_boot_off').checked ? 1 : 0;
 
+        savingPage = 'choc';
         sendWS(message);
+    }
+
+    function applyChocolateConfig(data) {
+        document.getElementById('fork_translate').checked = data['TRANSLATE'] === 1;
+        CHOC_BUTTONS.forEach((name, index) => {
+            document.getElementById(`fork_act_${index}`).value = data[`BTN${index}_ACT`];
+            document.getElementById(`fork_prm_${index}`).value = data[`BTN${index}_PRM`];
+        });
+        updatePresetFields();
+    }
+
+    function updateChocolateStatus(data) {
+        const status = document.getElementById('fork_choc_status');
+
+        if (!('CHOC_CONNECTED' in data)) {
+            return;
+        }
+
+        if (data['CHOC_CONNECTED']) {
+            status.textContent = '연결됨';
+            status.className = 'fork-ok';
+        } else if (!data['BT_CHOC_EN'] || data['BT_MODE'] !== BT_MODE_CENTRAL) {
+            status.textContent = '연결 안 됨 — Config > Bluetooth에서 Bluetooth Mode를 Central로, Chocolate Series를 켜야 연결합니다.';
+            status.className = 'fork-note';
+        } else {
+            status.textContent = '연결 안 됨 — 초콜릿 전원을 켜면 저절로 연결됩니다.';
+            status.className = 'fork-muted';
+        }
+    }
+
+    // ------------------------------------------------------------------ config message
+
+    function applyForkConfig(data) {
+        maxPresets = data['MAX_PRESETS'] || 20;
+        updateBoostState(data);
+        updateChocolateStatus(data);
+
+        [['boost', applyBoostConfig], ['choc', applyChocolateConfig]].forEach(([page, apply]) => {
+            const state = pages[page];
+            const snapshot = JSON.stringify(Object.keys(data).filter(key => state.keys.test(key)).sort().map(key => [key, data[key]]));
+
+            // 첫 응답은 항상 채운다(그 전에 손댄 값이 있어도 기본값이 남지 않게)
+            if (state.dirty && state.loaded) {
+                if (snapshot !== state.snapshot) {
+                    document.getElementById(state.note).textContent =
+                        '보드에서 설정이 바뀌었습니다. 저장하면 이 화면 값으로 덮어씁니다(다시 불러오기로 보드 값 확인).';
+                }
+                return;
+            }
+
+            apply(data);
+            state.snapshot = snapshot;
+            state.loaded = true;
+            state.dirty = false;
+        });
+    }
+
+    function applySaveResult(result) {
+        const page = savingPage || 'choc';
+        const ok = (result === 0);
+
+        savingPage = null;
+        document.getElementById(pages[page].note).textContent = RESULT_TEXT[result] || ('저장 실패 (' + result + ')');
+        if (ok) {
+            // 새 설정은 보드가 모든 웹 화면에 다시 보내준다
+            pages[page].dirty = false;
+            setToast((page === 'boost') ? 'Boost 설정 저장됨' : 'Chocolate 설정 저장됨');
+        }
     }
 
     function highlightButton(index) {
@@ -558,28 +657,21 @@
 
     function handleForkMessage(data) {
         switch (data['CMD']) {
-            case 'GETCHOCCONFIG':
-                applyChocConfig(data);
+            case 'GETFORKCONFIG':
+                applyForkConfig(data);
                 return true;
 
             case 'BOOSTSTATE':
-                updateStatus(data);
+                updateBoostState(data);
                 return true;
 
             case 'CHOCEVENT':
                 highlightButton(data['BUTTON']);
                 return true;
 
-            case 'CHOCCONFIGRESULT': {
-                const result = data['RESULT'];
-                document.getElementById('fork_note').textContent = RESULT_TEXT[result] || ('저장 실패 (' + result + ')');
-                if (result === 0) {
-                    // 새 설정은 보드가 모든 웹 화면에 다시 보내준다
-                    formDirty = false;
-                    setToast('Footswitch 설정 저장됨');
-                }
+            case 'FORKCONFIGRESULT':
+                applySaveResult(data['RESULT']);
                 return true;
-            }
 
             case 'GETFWINFO':
                 applyFirmwareInfo(data);

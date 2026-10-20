@@ -171,11 +171,11 @@ static void notify_changed(uint8_t boost_changed)
     {
         UI_RefreshBoostStatus();
     }
-    UI_RefreshFootswitchConfig();
+    UI_RefreshForkSettings();
 #else
     (void)boost_changed;
 #endif
-    wifi_request_fork_push(WIFI_FORK_PUSH_CHOC_CONFIG, 0);
+    wifi_request_fork_push(WIFI_FORK_PUSH_CONFIG, 0);
 }
 
 /****************************************************************************

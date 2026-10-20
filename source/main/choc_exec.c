@@ -244,15 +244,32 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
     return 1;
 }
 
+// 연결 시도가 실패할 때마다 끊김 연결점이 다시 불리므로 바뀔 때만 화면·웹에 알린다
+static void set_connected(uint8_t connected)
+{
+    if (ChocolateConnected == connected)
+    {
+        return;
+    }
+
+    ChocolateConnected = connected;
+#if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
+    UI_RefreshForkSettings();
+#endif
+    wifi_request_fork_push(WIFI_FORK_PUSH_CONFIG, 0);
+}
+
 void choc_exec_on_ble_connecting(const char* device_name)
 {
-    ChocolateConnected = choc_map_is_chocolate_name(device_name);
-    ESP_LOGI(TAG, "BLE connecting to %s (chocolate %d)", device_name, (int)ChocolateConnected);
+    uint8_t chocolate = choc_map_is_chocolate_name(device_name);
+
+    ESP_LOGI(TAG, "BLE connecting to %s (chocolate %d)", device_name, (int)chocolate);
+    set_connected(chocolate);
 }
 
 void choc_exec_on_ble_disconnected(void)
 {
-    ChocolateConnected = 0;
+    set_connected(0);
 }
 
 uint8_t choc_exec_is_chocolate_connected(void)

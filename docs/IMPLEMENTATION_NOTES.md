@@ -9,9 +9,9 @@
 | --- | --- | --- |
 | 2-2 볼륨 부스트 (설정·상태 판정·토글·부팅 시 OFF) | 구현 | TONEX One 볼륨 왕복값(3장 참고) |
 | 2 초콜릿 번역 계층 | 구현 | 초콜릿 신호(5장) |
-| 2-1 웹 Footswitch 페이지 | 구현 (Config > Footswitch) | — |
+| 2-1 웹 설정 페이지 | 구현 (상단 메뉴 Boost, Config > Chocolate) | — |
 | 3 메인 화면 BOOST 배지·볼륨·동작 알림 | 구현 | 화면 배치 눈으로 확인 |
-| 4-2 보드 화면 Footswitch 탭 | 구현 (설정 창 FSW 탭) | 터치 조작감 |
+| 4-2 보드 화면 설정 | 구현 (Setup 화면: 상단 상태 아이콘을 누르면 열림. Boost·Choc·BT·MIDI·Misc·Wi-Fi·Info 탭) | 터치 조작감 |
 | 1 튜너 | 1단계(USB 구성 화면/웹 덤프) + 음정 검출 엔진 | USB 구성 덤프 결과로 2단계 결정 |
 | (추가) 펌웨어 업데이트 | Wi-Fi 업데이트 + USB 설치 도구 | 첫 USB 설치 1회 |
 
@@ -58,12 +58,15 @@
 | `choc_map.c/.h` | 초콜릿 신호 판별(순수): BLE-MIDI 패킷 → 버튼 A~F, 동작 enum, 기본 배치 |
 | `choc_exec.c/.h` | 동작 실행: control/usb 함수 직접 호출, 알림·웹 이벤트, 연결 기기 추적 |
 | `fork_settings.c/.h` | 포크 설정 저장(NVS `boostconf`, `chocconf`), 즉시 적용 |
-| `display_fork.c/.h` | 메인 화면 배지·볼륨 라벨, 하단 1초 알림, 설정 창 FSW·USB 탭 |
-| `wifi_fork.c/.h` | 웹 명령(Footswitch·펌웨어·USB 정보), 브라우저 푸시, `/fork.js` |
+| `display_fork.c/.h` | 메인 화면 배지·볼륨 라벨, 하단 1초 알림, Setup 화면 여는 자리, 다른 태스크가 부르는 화면 갱신 API |
+| `display_fork_setup.c/.h` | Setup 화면: Boost·Choc·Info 탭, 닫기 |
+| `display_fork_config.c/.h` | Setup 화면의 업스트림 설정 탭(BT·MIDI·Misc·Wi-Fi), 저장 후 재부팅 |
+| `display_fork_widgets.c/.h` | 포크 화면 공용 위젯(라벨·스위치·버튼·드롭다운·스테퍼·부스트 배지) |
+| `wifi_fork.c/.h` | 웹 명령(부스트·초콜릿 설정, 펌웨어·USB 정보), 브라우저 푸시, `/fork.js` |
 | `ota_update.c/.h`, `ota_tag_scan.c/.h` | Wi-Fi 업데이트(`POST /update`), 플랫폼 표식 검색 |
 | `usb_desc_info.c/.h` | USB Configuration Descriptor 요약(튜너 1단계) |
 | `pitch_yin.c/.h` | 음정 검출 엔진(튜너 2단계 준비) |
-| `web/fork.js` | 웹 Footswitch·Firmware 페이지 |
+| `web/fork.js` | 웹 Boost·Chocolate·Firmware 페이지 |
 | `fork.cmake`, `components/tonex_fork_config/Kconfig` | 빌드 목록, 포크 Kconfig(`TONEX_FORK_*`) |
 | `CMakeUserPresets.json`, `sdkconfig.fork.ws43B`, `partitions_16MB_ota.csv` | `WS43B_FORK` 프리셋(OTA 파티션) |
 
@@ -109,11 +112,17 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 - 기본 배치: A 부스트 토글, B 탭템포, C 딜레이, D 공간계, E 프리셋 다운, F 프리셋 업. 번역 기본값 켜짐.
 - 번역은 보드의 "Midi CC on BT" 설정과 무관하다. Valeton GP5가 연결돼 있으면 번역하지 않고 기존 처리로 보낸다(효과·볼륨 파라미터 번호가 TONEX 전용).
   웹 "실행" 버튼도 같은 이유로 TONEX 계열이 연결돼 있을 때만 동작을 실행한다(그 외에는 행 강조와 "NO TONEX" 알림만).
-- 웹(Config > Footswitch, `web/fork.js`): 버튼 A~F 동작 드롭다운(CC 번호 없음), 프리셋 직접 선택일 때만 번호 칸, 부스트 OFF/ON·부스트 양·부팅 시 OFF, 번역 사용,
-  누른 버튼 행 1.5초 강조, 행마다 "실행"(그 버튼을 누른 것과 같은 동작), 부스트 토글 버튼, 현재 볼륨·배지·초콜릿 연결 표시.
-  ON > +3dB를 넣으면 같은 부스트 양을 내는 OFF/ON 값을 안내하고 저장하지 않는다. 저장은 재부팅 없이 즉시 적용된다.
-- 웹소켓 명령(서버 `wifi_fork.c`): `GETCHOCCONFIG`, `SETCHOCCONFIG`(→`CHOCCONFIGRESULT` 0=OK, 1=부스트 범위, 2=단위, 3=OFF≥ON, 4=버튼 동작·프리셋 번호 범위), `CHOCTEST`, `SETBOOST`(0/1/2=토글),
-  푸시 `GETCHOCCONFIG`(설정이 바뀌면 모든 화면에), `BOOSTSTATE`, `CHOCEVENT`.
+- 웹(`web/fork.js`). 부스트는 초콜릿 전용 기능이 아니므로(웹 버튼으로도 켠다) 페이지를 나눴다.
+  - 상단 메뉴 **Boost**(Globals 옆, TONEX 계열일 때만): 배지·현재 볼륨·토글 버튼, OFF/ON 값·부스트 양, OFF로 시작.
+    ON > +3dB를 넣으면 같은 부스트 양을 내는 OFF/ON 값을 안내하고 저장하지 않는다.
+  - Config > **Chocolate**: 연결 상태(안 붙었으면 업스트림 Bluetooth 설정의 Central·Chocolate Series를 확인하라는 안내), 버튼 매핑 사용,
+    버튼 A~F 동작 드롭다운(CC 번호 없음), 프리셋 직접 선택일 때만 번호 칸, 누른 버튼 행 1.5초 강조, 행마다 "실행"(그 버튼을 누른 것과 같은 동작).
+  - 두 페이지 모두 저장은 재부팅 없이 즉시 적용된다. 휴대폰 폭(480px 이하)에서는 상단 메뉴가 두 줄로 넘어간다(Boost가 붙어 Config가 화면 밖으로 밀리지 않게).
+- "버튼 매핑 사용"(`TranslateEnable`)을 끄면 초콜릿 신호를 번역하지 않고 기존 MIDI 처리(PC = 프리셋 선택, CC = Midi 설정)로 보낸다.
+  초콜릿을 다른 모드로 업스트림 방식 그대로 쓰거나, 문제가 생겼을 때 원래 동작과 비교하려고 둔다.
+- 웹소켓 명령(서버 `wifi_fork.c`): `GETFORKCONFIG`, `SETFORKCONFIG`(메시지에 있는 항목만 바꾼다 → `FORKCONFIGRESULT` 0=OK, 1=부스트 범위, 2=단위, 3=OFF≥ON, 4=버튼 동작·프리셋 번호 범위),
+  `CHOCTEST`, `SETBOOST`(0/1/2=토글), 푸시 `GETFORKCONFIG`(설정·초콜릿 연결이 바뀌면 모든 화면에), `BOOSTSTATE`, `CHOCEVENT`.
+  `GETFORKCONFIG`에는 업스트림 Bluetooth 설정 `BT_CHOC_EN`·`BT_MODE`도 실어 연결 안내에 쓴다.
 - 변경 파일: `choc_map.c/.h`, `choc_exec.c/.h`, `wifi_fork.c/.h`, `web/fork.js`(새 파일), 연결: `midi_control.c`(4곳), `wifi_config.c`(5곳), `web/index.html`(1줄).
 
 ### 3-3. 메인 화면 표시 (계획서 3)
@@ -125,21 +134,32 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 - **계획서와 다른 점**: EEZ 프로젝트에 객체를 추가하지 않고 `display_fork.c`가 실행 중에 LVGL 객체를 만든다.
   EEZ Studio 없이 작업할 수 있고, 업스트림이 EEZ 프로젝트를 다시 생성해도 충돌이 없다. 생성 코드는 고치지 않는다.
   보드 폰트(Montserrat)에 한글 글리프가 없어 보드 문구는 영어다.
-- 변경 파일: `display_fork.c/.h`(새 파일), 연결: `display.c`(6곳: 헤더, 요소 enum, 큐 전달 `UI_PostForkUpdate()`, 분기, 파라미터 갱신, 초기화).
+- 변경 파일: `display_fork*.c/.h`(새 파일), 연결: `display.c`(6곳: 헤더, 요소 enum, 큐 전달 `UI_PostForkUpdate()`, 분기, 파라미터 갱신, 초기화).
 
-### 3-4. 보드 화면 Footswitch 탭 (계획서 4-2)
+### 3-4. 보드 Setup 화면 (계획서 4-2)
 
-- 설정 창 탭뷰 끝에 `FSW` 탭(그 뒤에 `USB` 탭)을 붙인다. 기존 탭 인덱스(`CONFIG_TAB_*`)는 바뀌지 않는다.
-- 2열 배치: A/B/C(왼쪽), D/A+B/C+D(오른쪽) 동작 드롭다운. 드롭다운 항목은 동작 12개 + "Preset 1..N"(프리셋 직접 선택을 번호까지 한 번에 고름).
-- 부스트 OFF/ON은 −/+ 버튼(0.5dB), 부스트 양 표시, Translate·Boot Off 스위치. 범위를 벗어나면 저장하지 않고 안내한다.
-- 바뀐 값은 바로 적용되고(재부팅 없음) NVS 저장은 마지막 변경 1초 뒤 한 번 한다(+/- 연타가 플래시 쓰기 연타가 되지 않게, 화면이 멈추지 않게).
-  웹과 같은 설정(`fork_settings`)을 공유하고 서로 바뀌면 상대 화면도 갱신된다. 초콜릿을 밟으면 해당 행 라벨이 1.5초 강조된다.
+- 업스트림 기어 화면은 TONEX 이펙트 파라미터 편집 화면(Gate~Glob 탭)이라 탭을 더 붙일 자리가 없다. 포크는 별도 **Setup 화면**을 만든다.
+  - 여는 곳: 메인 화면 상단 오른쪽 Wi-Fi·BT·USB 아이콘 자리(누르면 주황으로 표시). 스와이프로 끝난 터치는 열지 않는다.
+  - 닫기: 업스트림 설정 화면과 같은 자리의 체크 표시. 탭은 위 버튼으로만 바꾼다(목록을 끌다가 옆 탭으로 넘어가지 않게).
+  - 업스트림 설정 화면의 탭에는 아무것도 붙이지 않는다(병합 안전).
+- 탭: Boost · Choc · BT · MIDI · Misc · Wi-Fi · Info.
+  - **Boost**: 배지·현재 볼륨·토글 버튼, OFF/ON 값 스테퍼(0.5dB), 부스트 양, Start with boost OFF. 범위를 벗어나면 바꾸지 않고 사유를 보여준다(ON은 +3dB가 최대 → OFF를 내리라고 안내).
+  - **Choc**: "M-Vave Chocolate" 제목과 연결 상태(안 붙었으면 BT 탭에서 켤 항목 안내), Button mapping 스위치와 켜고 끌 때의 차이,
+    버튼 A~F(2열) 동작 드롭다운(동작 13개) + 프리셋 직접 선택일 때만 번호 스테퍼, 마지막으로 누른 버튼. 초콜릿을 밟으면 해당 라벨이 1.5초 강조된다.
+  - 드롭다운 목록은 높이 300px로 묶고 넘치면 끌어서 스크롤한다. 프리셋 번호는 목록에 넣지 않고 스테퍼로 고른다(빅 TONEX 150개도 목록이 길어지지 않게). 스테퍼는 길게 누르면 계속 움직인다.
+  - **BT · MIDI · Misc · Wi-Fi**: 업스트림 컨트롤러 설정 중 보드에서 바꿀 만한 것(`display_fork_config.c` 표). 업스트림 공개 함수
+    `control_get/set_config_item_int()`를 쓰므로 업스트림 파일은 고치지 않는다. 웹처럼 바꾼 값을 모았다가 **Save & Reboot**(확인 창)에서
+    항목을 보내고 250ms 뒤 `control_save_user_data(1)`. 저장하지 않고 닫으면 저장·버리기를 묻는다.
+    글자 입력(SSID·암호·BT 이름·mDNS)은 현재 값만 보여주고 웹에서 바꾼다. 풋스위치 CC 표, Preset/PC Map, LCD 타이밍(잘못 넣으면 보드로 되돌릴 수 없음)은 웹 전용.
+  - **Info**: 펌웨어 버전·빌드·실행 슬롯·업데이트 방법, USB 디스크립터 요약(튜너 1단계).
+- Boost·Choc 값은 바로 적용되고(재부팅 없음) NVS 저장은 마지막 변경 1초 뒤 한 번 한다(+/- 연타가 플래시 쓰기 연타가 되지 않게, 화면이 멈추지 않게).
+  웹과 같은 설정(`fork_settings`)을 공유하고 서로 바뀌면 상대 화면도 갱신된다.
 
 ### 3-5. 튜너 (계획서 1)
 
-- 1단계(구현): TONEX가 연결될 때 Configuration Descriptor를 요약해 보드 설정 창 `USB` 탭과 웹 Config > Firmware > USB 정보에 보여준다.
-  인터페이스(번호·alt·클래스/서브클래스/프로토콜, UAC2 표시), IAD, 엔드포인트(방향·종류·동기화·패킷 크기·간격), AC 헤더 bcdADC, AS 일반·포맷(채널·비트·샘플레이트) 그리고
-  마지막 줄 `TUNER CHECK:`에 등시성 오디오 IN 후보를 정리한다. 웹에서는 텍스트로 복사할 수 있다.
+- 1단계(구현): TONEX가 연결될 때 Configuration Descriptor를 요약해 보드 Setup 화면 Info 탭과 웹 Config > Firmware > USB 정보에 보여준다.
+  장치 줄 바로 다음 `TUNER CHECK:` 줄에 등시성 오디오 IN 후보를 정리하고, 그 아래에 인터페이스(번호·alt·클래스/서브클래스/프로토콜, UAC2 표시), IAD,
+  엔드포인트(방향·종류·동기화·패킷 크기·간격), AC 헤더 bcdADC, AS 일반·포맷(채널·비트·샘플레이트)을 적는다. 웹에서는 텍스트로 복사할 수 있다.
 - 음정 검출 엔진(구현, 미연결): `pitch_yin.c` — 48kHz → 12kHz 다운샘플(31탭 FIR), YIN(임계 0.12) + 포물선 보간, 그리고 같은 구간 48kHz 원신호에서 주기 근처 5개 지연만 다시 계산하는 정밀화.
   합성 기타 신호(배음 10개, 약한 기음, 잡음) 기준 최악 오차: 73~659Hz 0.4센트 이하, 1318Hz 부근 1.1센트 이하 (`test_host/test_pitch_yin.c`).
 - 2단계(미구현, 실물 덤프 후): USB 오디오 수신. UAC1이면 SET_CUR(샘플레이트), UAC2면 클럭 소스 요청 후 인터페이스 claim → alt 선택 → 등시성 IN 전송 반복.
@@ -190,17 +210,17 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 | 뱅크가 끝에서 처음으로 돌아가는지 | 판별이 `n % 4`라 뱅크 위치와 무관하다. 확인 불필요. |
 | E/F와 함께 오는 PC | 같은 BLE 패킷이면 PC를 버린다. 별도 패킷으로 먼저 오면 A/B(C/D) 동작이 먼저 실행된다 → 실물에서 이 경우가 나오면 PC를 수십 ms 늦춰 판정하는 처리가 필요하다(아래 실물 항목). |
 | V3.0.0.2 알파 기준 포크 여부 | 기준 main `9fd1156`은 V2.5.0.2 이후 26커밋으로, 4.3B 깜빡임 수정(`3816ae1`, 픽셀 클럭·포치를 웹 Misc에서 설정)이 이미 들어 있다. 별도 결정 불필요. |
-| (선택) 본체 풋스위치 튜너 시 미확인 메시지 | `usb_tonex_one_parse()`의 default 분기가 시리얼 로그(`Unknown structure`)만 남긴다. 화면 표시는 아직 없다. 2단계에서 USB 탭에 붙일 수 있다. |
+| (선택) 본체 풋스위치 튜너 시 미확인 메시지 | `usb_tonex_one_parse()`의 default 분기가 시리얼 로그(`Unknown structure`)만 남긴다. 화면 표시는 아직 없다. 2단계에서 Setup 화면 Info 탭에 붙일 수 있다. |
 
 ### 실물 확인이 필요한 것
 
-**초콜릿 신호** (맥 MIDI Monitor, 또는 웹 Footswitch 페이지의 행 강조로 확인)
+**초콜릿 신호** (맥 MIDI Monitor, 또는 웹 Chocolate 페이지·보드 Setup > Choc 탭의 강조로 확인)
 
 - [ ] Program change A에서 A+B / C+D를 눌렀을 때 CC 2 / CC 3(값 5) 외에 PC도 같이 나오는지, 나온다면 같은 패킷인지
 - [ ] 단일 버튼의 PC가 누를 때 나오는지, 뗄 때 나오는지 (탭템포 정확도)
 - [ ] Program change B나 Advanced custom mode에 더 나은 동시 누르기 신호가 있는지
 
-**TONEX One USB (튜너용)** — 보드 설정 창 USB 탭 또는 웹 Firmware > USB 정보
+**TONEX One USB (튜너용)** — 보드 Setup 화면 Info 탭 또는 웹 Firmware > USB 정보
 
 - [ ] Full-Speed 연결에서 Audio Streaming 인터페이스와 등시성 IN 엔드포인트가 있는지 (`TUNER CHECK:` 줄)
 - [ ] UAC 버전(1 또는 2), 최대 패킷 크기, 샘플레이트
@@ -220,12 +240,13 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 ## 6. 실물 검증 순서
 
 1. USB로 `WS43B_FORK` 설치(`docs/FIRMWARE_UPDATE.md`) → 9V 전원으로 켜고 TONEX One 연결 → 프리셋 동기화 후 배지가 "BOOST OFF -2.0 dB"인지(부팅 시 OFF).
-2. 설정 창 USB 탭 사진 → 튜너 2단계 결정.
-3. CubeSuite를 Program change A로 바꾸고 A~D, A+B, C+D를 밟으며 웹 Footswitch 페이지 행 강조·보드 하단 알림 확인.
+2. 메인 화면 상단 상태 아이콘을 눌러 Setup 화면이 열리는지, 메인 화면 좌우 스와이프가 그대로인지. Info 탭 사진 → 튜너 2단계 결정.
+3. CubeSuite를 Program change A로 바꾸고 A~D, E(A+B), F(C+D)를 밟으며 Setup > Choc 강조·웹 Chocolate 페이지 행 강조·보드 하단 알림 확인.
 4. 부스트 토글 → 배지 ON/OFF, 웹 볼륨 표시, 실제 음량. 웹 Globals의 볼륨을 바꿔 CUSTOM이 나오는지.
 5. 딜레이·공간계 토글이 실제 상태를 따라가는지(웹이나 보드에서 먼저 켠 뒤 초콜릿으로 끄기).
-6. 웹 Firmware에서 같은 `TonexController.bin`을 다시 올려 Wi-Fi 업데이트와 재부팅 확인.
-7. 초콜릿 반응 지연이 Wi-Fi 켜짐 여부에 따라 달라지는지(계획서 4-1).
+6. Setup > Misc에서 값 하나를 바꿔 Save & Reboot → 재부팅 뒤 웹 Config > Misc에도 같은 값인지. 드롭다운 목록을 끌어 스크롤되는지.
+7. 웹 Firmware에서 같은 `TonexController.bin`을 다시 올려 Wi-Fi 업데이트와 재부팅 확인.
+8. 초콜릿 반응 지연이 Wi-Fi 켜짐 여부에 따라 달라지는지(계획서 4-1).
 
 ## 7. 검증한 것
 
@@ -235,7 +256,7 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 | 부스트 규칙 | 호스트 테스트: 판정·허용 범위·토글·검증, One 0~10 왕복 환산 전 범위 | 통과 |
 | OTA 플랫폼 표식 검색 | 호스트 테스트: 1바이트~4KB 무작위 조각, 거의 같은 문자열, 처음/끝 위치 | 통과 |
 | 음정 검출 | 호스트 테스트: 10개 음 × 5개 디튠 × 3가지 파형, 무음·잡음 | 통과 (3-5 수치) |
-| 웹 페이지 | 가짜 웹소켓 보드로 PC·휴대폰 폭 렌더링, 저장·검증·실행·업로드·USB 정보 | 통과 |
-| 4.3B 화면 배치 | `test_host/ui_preview`: 업스트림 생성 UI + `display_fork.c`를 맥에서 실행해 배지 4상태·알림·FSW 탭·드롭다운·USB 탭을 PNG로 | 겹침 없음 (스킨 그림·실제 LCD 색감·터치는 보드 필요) |
-| 펌웨어 빌드 | 10개 프리셋 (0장) | 통과 |
+| 웹 페이지 | 가짜 웹소켓 보드로 PC·휴대폰 폭 렌더링, Boost·Chocolate 따로 저장·검증·실행, 업로드(확정 대기·연속 클릭·읽기 실패)·USB 정보 | 통과 |
+| 4.3B 화면 배치 | `test_host/ui_preview`: 업스트림 생성 UI + `display_fork*.c`를 맥에서 실행해 메인 화면(배지 4상태·알림·Setup 여는 자리)과 Setup 화면 7개 탭·드롭다운·저장 확인 창을 PNG로 | 겹침 없음 (스킨 그림·실제 LCD 색감·터치는 보드 필요) |
+| 펌웨어 빌드 | ESP32-S3 프리셋 23개 + `WS43B_FORK` (0장) | 통과 |
 | 보드 화면·BLE·USB·OTA 실동작 | 실물 필요 | 미검증 |

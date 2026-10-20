@@ -22,12 +22,12 @@ limitations under the License.
 #include "esp_http_server.h"
 #include "json_parser.h"
 
-// 포크가 추가한 웹 기능: Footswitch 페이지, 펌웨어(OTA) 페이지, USB 정보.
+// 포크가 추가한 웹 기능: Boost·Chocolate 페이지, 펌웨어(OTA) 페이지, USB 정보.
 // 웹 화면은 web/fork.js가 index.html에 덧붙인다.
 
 enum WiFiForkPushTypes
 {
-    WIFI_FORK_PUSH_CHOC_CONFIG,
+    WIFI_FORK_PUSH_CONFIG,
     WIFI_FORK_PUSH_BOOST_STATE,
     WIFI_FORK_PUSH_CHOC_BUTTON
 };

@@ -350,3 +350,28 @@ esp_err_t ota_update_register(httpd_handle_t server)
 }
 
 #endif  //CONFIG_TONEX_FORK_OTA_UPDATE
+
+// 보드 화면 문구라 영어로 쓴다(보드 폰트에 한글이 없다)
+void ota_update_describe_firmware(char* buffer, size_t size)
+{
+    const esp_app_desc_t* app = esp_app_get_description();
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const char* update;
+
+    if (ota_update_is_pending_verify())
+    {
+        update = "New firmware is being confirmed (30 s after start)";
+    }
+    else if (ota_update_is_available())
+    {
+        update = "Wi-Fi update: web page > Config > Firmware";
+    }
+    else
+    {
+        update = "Wi-Fi update not available in this build (install WS43B_FORK over USB)";
+    }
+
+    snprintf(buffer, size, "%s %s\nBuilt %s %s, IDF %s, slot %s\n%s",
+             app->project_name, app->version, app->date, app->time, app->idf_ver,
+             (running != NULL) ? running->label : "?", update);
+}

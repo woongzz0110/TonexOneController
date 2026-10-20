@@ -11,11 +11,14 @@
 #include "choc_map.h"
 #include "fork_settings.h"
 #include "display_fork.h"
+#include "control.h"
+#include "ota_update.h"
 #include "preview.h"
 
 uint8_t PreviewSupported = 1;
 uint8_t PreviewVolumeKnown = 1;
 float PreviewVolume = -2.0f;
+uint8_t PreviewChocConnected = 1;
 
 static tBoostConfig Boost;
 static tChocConfig Choc;
@@ -51,7 +54,7 @@ uint8_t fork_settings_set_boost(const tBoostConfig* config)
     if (result == BOOST_CONFIG_OK)
     {
         Boost = *config;
-        UI_RefreshFootswitchConfig();
+        UI_RefreshForkSettings();
     }
     return result;
 }
@@ -65,7 +68,7 @@ void fork_settings_get_choc(tChocConfig* config)
 void fork_settings_set_choc(const tChocConfig* config)
 {
     Choc = *config;
-    UI_RefreshFootswitchConfig();
+    UI_RefreshForkSettings();
 }
 
 uint8_t fork_settings_set_all(const tBoostConfig* boost, const tChocConfig* choc)
@@ -196,4 +199,79 @@ const usb_standard_desc_t* usb_parse_next_descriptor(const usb_standard_desc_t* 
 
     *offset = next;
     return (const usb_standard_desc_t*)((const uint8_t*)cur_desc + cur_desc->bLength);
+}
+
+// ---- control.c: 업스트림 컨트롤러 설정 (업스트림 기본값과 비슷한 예시 값) ----
+
+#define PREVIEW_CONFIG_ITEMS        256
+
+static uint32_t ConfigValues[PREVIEW_CONFIG_ITEMS];
+static uint8_t ConfigLoaded = 0;
+
+static void ensure_config(void)
+{
+    if (!ConfigLoaded)
+    {
+        ConfigValues[CONFIG_ITEM_BT_MODE] = 1;
+        ConfigValues[CONFIG_ITEM_MV_CHOC_ENABLE] = 1;
+        ConfigValues[CONFIG_ITEM_XV_MD1_ENABLE] = 1;
+        ConfigValues[CONFIG_ITEM_MIDI_CHANNEL] = 1;
+        ConfigValues[CONFIG_ITEM_LOOP_AROUND] = 1;
+        ConfigValues[CONFIG_ITEM_SAVE_PRESET_TO_SLOT] = 3;
+        ConfigValues[CONFIG_ITEM_WIFI_TX_POWER] = 3;
+        ConfigLoaded = 1;
+    }
+}
+
+void preview_set_config(uint32_t item, uint32_t value)
+{
+    ensure_config();
+    ConfigValues[item] = value;
+}
+
+uint32_t control_get_config_item_int(uint32_t item)
+{
+    ensure_config();
+    return (item < PREVIEW_CONFIG_ITEMS) ? ConfigValues[item] : 0;
+}
+
+void control_get_config_item_string(uint32_t item, char* name)
+{
+    switch (item)
+    {
+        case CONFIG_ITEM_BT_CUSTOM_NAME:    strcpy(name, "MyPedal"); break;
+        case CONFIG_ITEM_BT_PERIPHERAL_NAME: strcpy(name, "TonexBT"); break;
+        case CONFIG_ITEM_WIFI_SSID:         strcpy(name, "HomeWiFi"); break;
+        case CONFIG_ITEM_MDNS_NAME:         strcpy(name, "tonex"); break;
+        default:                            name[0] = 0; break;
+    }
+}
+
+void control_set_config_item_int(uint32_t item, uint32_t status)
+{
+    printf("preview: set config %u = %u\n", (unsigned)item, (unsigned)status);
+}
+
+void control_save_user_data(uint8_t reboot)
+{
+    printf("preview: save user data (reboot %d)\n", (int)reboot);
+}
+
+// ---- choc_exec / boost_ctrl / ota_update ----
+
+uint8_t choc_exec_is_chocolate_connected(void)
+{
+    return PreviewChocConnected;
+}
+
+esp_err_t boost_ctrl_toggle(uint8_t* new_state, float* target_db)
+{
+    (void)new_state;
+    (void)target_db;
+    return ESP_OK;
+}
+
+void ota_update_describe_firmware(char* buffer, size_t size)
+{
+    snprintf(buffer, size, "TonexController v2.5.0.2-fork (sample)\nBuilt Oct 20 2026 12:00:00, IDF v6.0.2, slot ota_0\nWi-Fi update: web page > Config > Firmware");
 }
