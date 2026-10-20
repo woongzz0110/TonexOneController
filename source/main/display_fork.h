@@ -29,6 +29,8 @@ void UI_RefreshBoostStatus(void);
 void UI_RefreshForkSettings(void);
 void UI_NotifyChocButton(uint8_t button);
 void UI_RefreshUsbInfo(void);
+// 튜너 화면이 열려 있으면 닫고, 아니면 연다(초콜릿 Tuner On/Off)
+void UI_ToggleTuner(void);
 
 // display.c에 있다: display 태스크로 갱신을 넘긴다
 void UI_PostForkUpdate(uint8_t kind, uint16_t value, const char* text);

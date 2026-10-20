@@ -12,6 +12,8 @@
 #include "usb_desc_info.h"
 #include "choc_map.h"
 #include "fork_settings.h"
+#include "tuner_audio.h"
+#include "tuner_ctrl.h"
 #include "choc_exec.h"
 #include "control.h"
 #include "preview.h"
@@ -145,7 +147,20 @@ static lv_obj_t* setup_tabview(void)
     return find_child_of_class(lv_scr_act(), &lv_tabview_class, 0);
 }
 
-enum SetupTabs { TAB_BOOST, TAB_CHOC, TAB_BT, TAB_MIDI, TAB_MISC, TAB_WIFI, TAB_INFO };
+enum SetupTabs { TAB_BOOST, TAB_CHOC, TAB_TUNER, TAB_BT, TAB_MIDI, TAB_MISC, TAB_WIFI, TAB_INFO };
+
+// 보드에서는 display.c(action_tuner_pressed, UI_SetTunerFrequencies)가 하는 일을 여기서 흉내 낸다
+static void show_tuner_screen(int32_t cents, const char* note)
+{
+    uint32_t color = (abs(cents) < 5) ? 0x00FF88 : ((abs(cents) < 15) ? 0xFFAA00 : 0xFF4444);
+
+    lv_scr_load(objects.tuner);
+    lv_label_set_text(objects.ui_tuner_reference_label, "440 Hz");
+    lv_arc_set_value(objects.ui_tuner_arc, cents);
+    lv_obj_set_style_bg_color(objects.ui_tuner_arc, lv_color_hex(color), LV_PART_KNOB);
+    lv_label_set_text(objects.ui_tuner_note_label, note);
+    pump(400);
+}
 
 static lv_obj_t* show_setup_tab(uint32_t index)
 {
@@ -302,6 +317,74 @@ int main(int argc, char** argv)
     fork_setup_open();
     show_setup_tab(TAB_MISC);
     capture("18_setup_misc_unknown_value.png");
+    preview_set_config(CONFIG_ITEM_SCREEN_ROTATION, 0);
+
+    // 19) 원조 One 연결: 메인 화면 튜너 아이콘(업스트림은 ONE+만 보인다, 포크 감시 타이머가 연다)
+    lv_scr_load(objects.screen1);
+    pump(300);
+    capture("19_main_tuner_icon_one.png");
+
+    // 20) 튜너 화면: 페달에 요청 번호 후보를 묻는 중
+    PreviewTunerProbing = 1;
+    PreviewTunerProbeIndex = 1;
+    show_tuner_screen(0, "--");
+    capture("20_tuner_asking_pedal.png");
+
+    // 21) USB 녹음으로 재는 중(A2, -3 센트)
+    PreviewTunerProbing = 0;
+    PreviewTunerSource = TUNER_SOURCE_AUDIO;
+    PreviewTunerAudioState = TUNER_AUDIO_STREAMING;
+    show_tuner_screen(-3, "A2");
+    capture("21_tuner_usb_audio.png");
+
+    // 22) 페달 응답이 없고 녹음 패킷이 Full Speed에서 44.1kHz를 못 담음(공개된 덤프로 본 가장 그럴듯한 경우)
+    PreviewTunerSource = TUNER_SOURCE_NONE;
+    PreviewTunerAudioState = TUNER_AUDIO_TOO_SMALL;
+    show_tuner_screen(0, "--");
+    capture("22_tuner_no_source.png");
+
+    // 23) Setup > Tuner: 설정과 진단 보고서(예시 글)
+    fork_setup_open();
+    show_setup_tab(TAB_TUNER);
+    pump(600);
+    capture("23_setup_tuner.png");
+
+    // 24) Setup > Choc: E에 Tuner On/Off를 배정하고 목록을 펼친 모습
+    fork_settings_get_choc(&choc);
+    choc.Buttons[CHOC_BUTTON_E].Action = CHOC_ACTION_TUNER_TOGGLE;
+    fork_settings_set_choc(&choc);
+    tab = show_setup_tab(TAB_CHOC);
+    UI_RefreshForkSettings();
+    pump(100);
+    dropdown = find_child_of_class(tab, &lv_dropdown_class, CHOC_BUTTON_E);
+    lv_dropdown_open(dropdown);
+    capture("24_setup_choc_tuner_action.png");
+    lv_dropdown_close(dropdown);
+
+    // 25) 길게 눌러 튜너: A를 고름, 초콜릿은 아직 Program change 모드(안내)
+    fork_settings_get_choc(&choc);
+    choc.Buttons[CHOC_BUTTON_E].Action = CHOC_ACTION_PRESET_DOWN;
+    choc.TunerHoldButton = CHOC_BUTTON_A;
+    fork_settings_set_choc(&choc);
+    PreviewChocInput = CHOC_INPUT_TAP;
+    UI_RefreshForkSettings();
+    UI_NotifyChocButton(CHOC_BUTTON_A);
+    capture("25_setup_choc_hold_pc_mode.png");
+
+    // 26) Manufacturer Control 모드로 바꾼 뒤(누름·뗌이 옴), 시간 1.0초
+    choc.HoldTime = 100;
+    fork_settings_set_choc(&choc);
+    PreviewChocInput = CHOC_INPUT_PRESS_RELEASE;
+    UI_RefreshForkSettings();
+    UI_NotifyChocButton(CHOC_BUTTON_B);
+    capture("26_setup_choc_hold_ok.png");
+
+    // 27) 확인된 페달 후보를 켜고 연주를 기다리는 중(녹음이 Full Speed에서 못 받아도 실패로 보이지 않게)
+    PreviewTunerSource = TUNER_SOURCE_NONE;
+    PreviewTunerAudioState = TUNER_AUDIO_TOO_SMALL;
+    PreviewTunerPedalOn = 1;
+    show_tuner_screen(0, "--");
+    capture("27_tuner_pedal_on.png");
 
     return 0;
 }

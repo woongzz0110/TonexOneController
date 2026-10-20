@@ -28,6 +28,10 @@ limitations under the License.
 #define CHOC_COMBO_CC_CD            3
 #define CHOC_COMBO_VALUE            5
 
+// Manufacturer Control 모드: A~D = CC 20~23, E = 24, F = 25
+#define CHOC_MFR_CC_FIRST           20
+#define CHOC_MFR_CC_LAST            25
+
 static const char* ActionNames[CHOC_ACTION_COUNT] =
 {
     "None",
@@ -42,7 +46,8 @@ static const char* ActionNames[CHOC_ACTION_COUNT] =
     "Reverb On/Off",
     "Mod On/Off",
     "Comp On/Off",
-    "Gate On/Off"
+    "Gate On/Off",
+    "Tuner On/Off"
 };
 
 static const char* ButtonNames[CHOC_BUTTON_COUNT] = {"A", "B", "C", "D", "E", "F"};
@@ -64,11 +69,13 @@ static uint8_t midi_data_length(uint8_t status)
     }
 }
 
-static void add_button(tChocDecodeResult* result, uint8_t button)
+static void add_button(tChocDecodeResult* result, uint8_t button, uint8_t kind)
 {
     if (result->Count < CHOC_MAX_EVENTS)
     {
-        result->Buttons[result->Count++] = button;
+        result->Buttons[result->Count] = button;
+        result->Kinds[result->Count] = kind;
+        result->Count++;
     }
 }
 
@@ -81,7 +88,7 @@ static void handle_message(uint8_t status, uint8_t data_1, uint8_t data_2, tChoc
         {
             // 초콜릿 뱅크가 바뀌어도 PC 번호의 나머지 4로 같은 버튼이 된다
             result->Claimed = 1;
-            add_button(result, CHOC_BUTTON_A + (data_1 % 4));
+            add_button(result, CHOC_BUTTON_A + (data_1 % 4), CHOC_EVENT_TAP);
         } break;
 
         case MIDI_STATUS_CC:
@@ -93,9 +100,15 @@ static void handle_message(uint8_t status, uint8_t data_1, uint8_t data_2, tChoc
 
                 if (data_2 == CHOC_COMBO_VALUE)
                 {
-                    add_button(result, (data_1 == CHOC_COMBO_CC_AB) ? CHOC_BUTTON_E : CHOC_BUTTON_F);
+                    add_button(result, (data_1 == CHOC_COMBO_CC_AB) ? CHOC_BUTTON_E : CHOC_BUTTON_F, CHOC_EVENT_TAP);
                     *combo_found = 1;
                 }
+            }
+            else if ((data_1 >= CHOC_MFR_CC_FIRST) && (data_1 <= CHOC_MFR_CC_LAST))
+            {
+                // E·F를 뗄 때 오는 값 0도 A~D 번호로 온다: 어느 쪽인지는 눌림 상태를 아는 choc_hold.c가 가른다
+                result->Claimed = 1;
+                add_button(result, CHOC_BUTTON_A + (data_1 - CHOC_MFR_CC_FIRST), (data_2 > 0) ? CHOC_EVENT_PRESS : CHOC_EVENT_RELEASE);
             }
         } break;
 
@@ -218,9 +231,11 @@ void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* re
         uint8_t keep = 0;
         for (uint8_t loop = 0; loop < result->Count; loop++)
         {
-            if (result->Buttons[loop] >= CHOC_BUTTON_E)
+            if ((result->Buttons[loop] >= CHOC_BUTTON_E) || (result->Kinds[loop] != CHOC_EVENT_TAP))
             {
-                result->Buttons[keep++] = result->Buttons[loop];
+                result->Buttons[keep] = result->Buttons[loop];
+                result->Kinds[keep] = result->Kinds[loop];
+                keep++;
             }
         }
         result->Count = keep;
@@ -240,6 +255,9 @@ void choc_config_set_default(tChocConfig* config)
     config->Buttons[CHOC_BUTTON_D].Action = CHOC_ACTION_REVERB_TOGGLE;
     config->Buttons[CHOC_BUTTON_E].Action = CHOC_ACTION_PRESET_DOWN;
     config->Buttons[CHOC_BUTTON_F].Action = CHOC_ACTION_PRESET_UP;
+
+    config->TunerHoldButton = CHOC_HOLD_NONE;
+    config->HoldTime = CHOC_HOLD_TIME_DEFAULT;
 
     for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
     {
@@ -274,6 +292,18 @@ uint8_t choc_config_sanitize(tChocConfig* config)
             config->Buttons[loop].Param = CHOC_PRESET_PARAM_MIN;
             changed = 1;
         }
+    }
+
+    if ((config->TunerHoldButton >= CHOC_BUTTON_COUNT) && (config->TunerHoldButton != CHOC_HOLD_NONE))
+    {
+        config->TunerHoldButton = CHOC_HOLD_NONE;
+        changed = 1;
+    }
+
+    if ((config->HoldTime < CHOC_HOLD_TIME_MIN) || (config->HoldTime > CHOC_HOLD_TIME_MAX) || ((config->HoldTime % CHOC_HOLD_TIME_STEP) != 0))
+    {
+        config->HoldTime = CHOC_HOLD_TIME_DEFAULT;
+        changed = 1;
     }
 
     return changed;

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include "choc_map.h"
+#include "choc_hold.h"
 #include "boost.h"
 
 static int failures = 0;
@@ -129,9 +130,145 @@ static void test_boost(void)
     bad = b; bad.OffDb10 = -400; bad.OnDb10 = -395; CHECK(boost_config_check(&bad) == BOOST_CONFIG_OK, "min gap ok");
 }
 
+// Manufacturer Control 모드: A~D = CC 20~23 (127 누름 / 0 뗌), E = CC 24, F = CC 25
+static void test_decode_press_release(void)
+{
+    const uint8_t press_a[] = {0x80, 0x80, 0xB0, 20, 127};
+    const uint8_t release_d[] = {0x80, 0x80, 0xB0, 23, 0};
+    const uint8_t press_f[] = {0x80, 0x80, 0xB0, 25, 127};
+    const uint8_t unrelated[] = {0x80, 0x80, 0xB0, 26, 127};
+    tChocDecodeResult r;
+
+    choc_map_decode(press_a, sizeof(press_a), &r);
+    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_A) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press A");
+    choc_map_decode(release_d, sizeof(release_d), &r);
+    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_D) && (r.Kinds[0] == CHOC_EVENT_RELEASE), "release D");
+    choc_map_decode(press_f, sizeof(press_f), &r);
+    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_F) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press F");
+    choc_map_decode(unrelated, sizeof(unrelated), &r);
+    CHECK(!r.Claimed && (r.Count == 0), "CC 26 is not chocolate");
+
+    {
+        const uint8_t pc[] = {0x80, 0x80, 0xC0, 5};
+        choc_map_decode(pc, sizeof(pc), &r);
+        CHECK((r.Kinds[0] == CHOC_EVENT_TAP) && (r.Buttons[0] == CHOC_BUTTON_B), "pc is tap");
+    }
+}
+
+static tChocHoldResult step(tChocHold* hold, const tChocConfig* config, uint8_t kind, uint8_t button)
+{
+    tChocHoldResult result;
+    choc_hold_event(hold, config, kind, button, &result);
+    return result;
+}
+
+static void test_hold(void)
+{
+    tChocConfig config;
+    tChocHold hold;
+    tChocHoldResult r;
+
+    choc_config_set_default(&config);
+    CHECK((config.TunerHoldButton == CHOC_HOLD_NONE) && (config.HoldTime == CHOC_HOLD_TIME_DEFAULT), "hold defaults");
+    config.TunerHoldButton = CHOC_BUTTON_A;
+    choc_hold_reset(&hold);
+
+    // 길게 누름 버튼을 짧게: 떼는 순간 원래 동작
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_A);
+    CHECK(r.arm_timer && (r.run_count == 0) && (r.notify == CHOC_BUTTON_A), "A press arms");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    CHECK(r.cancel_timer && (r.run_count == 1) && (r.run[0] == CHOC_BUTTON_A) && !r.toggle_tuner, "A short");
+
+    // 길게: 타이머가 튜너, 뗄 때는 아무것도
+    step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_A);
+    choc_hold_timer_expired(&hold, &r);
+    CHECK(r.toggle_tuner, "A long toggles tuner");
+    choc_hold_timer_expired(&hold, &r);
+    CHECK(!r.toggle_tuner, "only once per hold");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    CHECK((r.run_count == 0) && !r.toggle_tuner, "release after hold does nothing");
+
+    // 다른 버튼은 누르는 순간 실행, 뗌은 무시
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_B);
+    CHECK((r.run_count == 1) && (r.run[0] == CHOC_BUTTON_B) && !r.arm_timer, "B immediate");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_B);
+    CHECK((r.run_count == 0) && !r.cancel_timer, "B release ignored");
+
+    // 뗀 뒤 늦게 온 타이머 만료는 무시
+    step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_A);
+    step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    choc_hold_timer_expired(&hold, &r);
+    CHECK(!r.toggle_tuner, "late timer ignored");
+
+    // 연결 직후 누름을 못 본 뗌
+    choc_hold_reset(&hold);
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    CHECK((r.run_count == 0) && !r.cancel_timer, "orphan release ignored");
+
+    // A+B: A가 먼저 따로 눌린 뒤 E. A의 대기는 E에 흡수되고, 뗌(CC 20/21 = 0)은 E의 뗌
+    choc_hold_reset(&hold);
+    step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_A);
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_E);
+    CHECK(r.cancel_timer && (r.run_count == 1) && (r.run[0] == CHOC_BUTTON_E), "E absorbs pending A");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_B);
+    CHECK((r.run_count == 0) && ((hold.down & (1 << CHOC_BUTTON_E)) == 0), "B=0 releases E");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    CHECK(r.run_count == 0, "second release ignored");
+
+    // E를 길게 누름 버튼으로
+    config.TunerHoldButton = CHOC_BUTTON_E;
+    choc_hold_reset(&hold);
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_E);
+    CHECK(r.arm_timer, "E arms");
+    choc_hold_timer_expired(&hold, &r);
+    CHECK(r.toggle_tuner, "E long");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    CHECK((r.run_count == 0) && (hold.hold_button == CHOC_HOLD_NONE), "E released by A=0");
+
+    // E 대기 중 뗌을 놓치고 B를 누름: E 대기는 실행 없이 끝나고 B는 실행
+    choc_hold_reset(&hold);
+    step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_E);
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_B);
+    CHECK(r.cancel_timer && (hold.hold_button == CHOC_HOLD_NONE) && (r.run_count == 1) && (r.run[0] == CHOC_BUTTON_B), "B press ends a stale E hold");
+
+    // E 뗌을 놓친 뒤 길게 누름 버튼 A를 짧게 누름: A 동작이 실행되고 튜너는 열리지 않는다
+    config.TunerHoldButton = CHOC_BUTTON_A;
+    choc_hold_reset(&hold);
+    step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_E);
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_A);
+    CHECK(r.arm_timer && ((hold.down & (1 << CHOC_BUTTON_E)) == 0), "new A press clears a stale E");
+    r = step(&hold, &config, CHOC_EVENT_RELEASE, CHOC_BUTTON_A);
+    CHECK((r.run_count == 1) && (r.run[0] == CHOC_BUTTON_A) && r.cancel_timer, "short A runs after a lost E release");
+    choc_hold_timer_expired(&hold, &r);
+    CHECK(!r.toggle_tuner, "no tuner after a lost E release");
+
+    // C·D 쪽도 같다
+    config.TunerHoldButton = CHOC_BUTTON_C;
+    choc_hold_reset(&hold);
+    step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_F);
+    r = step(&hold, &config, CHOC_EVENT_PRESS, CHOC_BUTTON_C);
+    CHECK(r.arm_timer && ((hold.down & (1 << CHOC_BUTTON_F)) == 0), "new C press clears a stale F");
+
+    // Program change 모드(TAP)는 길게 누름 버튼이어도 원래 동작
+    config.TunerHoldButton = CHOC_BUTTON_C;
+    r = step(&hold, &config, CHOC_EVENT_TAP, CHOC_BUTTON_C);
+    CHECK((r.run_count == 1) && (r.run[0] == CHOC_BUTTON_C) && !r.arm_timer, "tap ignores hold");
+
+    // 설정 검사
+    config.TunerHoldButton = 9;
+    config.HoldTime = 15;
+    CHECK(choc_config_sanitize(&config) && (config.TunerHoldButton == CHOC_HOLD_NONE) && (config.HoldTime == CHOC_HOLD_TIME_DEFAULT), "hold sanitize");
+    config.HoldTime = 45;
+    CHECK(choc_config_sanitize(&config) && (config.HoldTime == CHOC_HOLD_TIME_DEFAULT), "hold time step");
+    config.HoldTime = 150;
+    CHECK(!choc_config_sanitize(&config), "1.5 s valid");
+}
+
 int main(void)
 {
     test_decode();
+    test_decode_press_release();
+    test_hold();
     test_config();
     test_boost();
     printf("%s (%d failures)\n", failures ? "FAILED" : "OK", failures);

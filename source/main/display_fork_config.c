@@ -108,6 +108,7 @@ typedef struct
     lv_obj_t* wifi_warning;
     uint8_t ssid_empty;
     void (*close_screen)(void);
+    uint8_t close_box_open;
     uint8_t saving;
 } tConfigUI;
 
@@ -369,6 +370,7 @@ static void close_box_cb(lv_event_t* e)
     uint16_t button = lv_msgbox_get_active_btn(box);
 
     lv_msgbox_close_async(box);
+    ConfigUI.close_box_open = 0;
 
     if (button == 0)
     {
@@ -389,7 +391,8 @@ void fork_config_confirm_close(void (*close_screen)(void))
     static const char* Buttons[] = {"Save & Reboot", "Discard", "Keep editing", ""};
     lv_obj_t* box;
 
-    if (ConfigUI.saving)
+    // 초콜릿 Tuner를 거듭 밟아도 창이 겹쳐 뜨지 않게
+    if (ConfigUI.saving || ConfigUI.close_box_open)
     {
         return;
     }
@@ -400,6 +403,7 @@ void fork_config_confirm_close(void (*close_screen)(void))
         return;
     }
 
+    ConfigUI.close_box_open = 1;
     ConfigUI.close_screen = close_screen;
     box = lv_msgbox_create(NULL, "Unsaved changes", "BT, MIDI, Misc or Wi-Fi settings were changed. They apply only after saving and restarting.", Buttons, false);
     style_message_box(box);

@@ -30,6 +30,7 @@ limitations under the License.
     #include "ui.h"
     #include "display_fork_widgets.h"
     #include "display_fork_setup.h"
+    #include "display_fork_tuner.h"
 #endif
 
 enum ForkUIKinds
@@ -38,7 +39,8 @@ enum ForkUIKinds
     FORK_UI_BOOST_STATUS,
     FORK_UI_SETTINGS,
     FORK_UI_CHOC_BUTTON,
-    FORK_UI_USB_INFO
+    FORK_UI_USB_INFO,
+    FORK_UI_TUNER_TOGGLE
 };
 
 // ---- 다른 태스크에서 부르는 API (큐로만 넘긴다) ----
@@ -85,6 +87,13 @@ void UI_RefreshUsbInfo(void)
 {
 #if CONFIG_TONEX_FORK_UI_800X480
     UI_PostForkUpdate(FORK_UI_USB_INFO, 0, NULL);
+#endif
+}
+
+void UI_ToggleTuner(void)
+{
+#if CONFIG_TONEX_FORK_UI_800X480
+    UI_PostForkUpdate(FORK_UI_TUNER_TOGGLE, 0, NULL);
 #endif
 }
 
@@ -236,6 +245,8 @@ void display_fork_init(void)
 
     create_badge();
     create_setup_zone();
+    // Setup 화면의 Tuner 탭이 이 상태를 쓰므로 먼저
+    display_fork_tuner_init();
     fork_setup_create();
 #endif
 }
@@ -272,6 +283,11 @@ void display_fork_handle_update(uint8_t kind, uint16_t value, const char* text)
         case FORK_UI_USB_INFO:
         {
             fork_setup_refresh_usb();
+        } break;
+
+        case FORK_UI_TUNER_TOGGLE:
+        {
+            display_fork_tuner_toggle();
         } break;
 
         default:

@@ -23,12 +23,13 @@ limitations under the License.
 
 #include <stdint.h>
 
-// 포크 Setup 화면(4.3B): Boost · Choc · BT · MIDI · Misc · Wi-Fi · Info 탭.
+// 포크 Setup 화면(4.3B): Boost · Choc · Tuner · BT · MIDI · Misc · Wi-Fi · Info 탭.
 // 메인 화면 상단 상태 아이콘을 누르면 열리고, 오른쪽 아래 체크 표시로 닫는다.
 // 모두 display 태스크(LVGL 락 보유)에서 부른다.
 
 void fork_setup_create(void);
 void fork_setup_open(void);
+uint8_t fork_setup_is_active(void);
 void fork_setup_refresh_boost(void);
 void fork_setup_refresh_choc(void);
 void fork_setup_highlight_button(uint8_t button);

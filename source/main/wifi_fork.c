@@ -38,6 +38,9 @@ limitations under the License.
 #include "fork_settings.h"
 #include "usb_desc_info.h"
 #include "ota_update.h"
+#include "uac_stream.h"
+#include "tuner_proto.h"
+#include "tuner_ctrl.h"
 #include "wifi_fork.h"
 
 #define RESPONSE_BUFFER_SIZE        (8 * 1024)
@@ -109,6 +112,9 @@ static void build_fork_config_json(char* buffer, size_t size)
     json_gen_obj_set_int(&jstr, "BT_CHOC_EN", control_get_config_item_int(CONFIG_ITEM_MV_CHOC_ENABLE));
     json_gen_obj_set_int(&jstr, "BT_MODE", control_get_config_item_int(CONFIG_ITEM_BT_MODE));
     json_gen_obj_set_int(&jstr, "MAX_PRESETS", usb_get_max_presets_for_connected_modeller());
+    json_gen_obj_set_int(&jstr, "TUNER_HOLD", (choc.TunerHoldButton < CHOC_BUTTON_COUNT) ? choc.TunerHoldButton : -1);
+    json_gen_obj_set_int(&jstr, "HOLD_MS", choc.HoldTime * 10);
+    json_gen_obj_set_int(&jstr, "CHOC_INPUT", choc_exec_get_input_mode());
     add_boost_state(&jstr);
 
     json_gen_end_object(&jstr);
@@ -179,6 +185,85 @@ static void build_usb_info_json(char* buffer, size_t size)
     json_gen_pop_array(&jstr);
     json_gen_end_object(&jstr);
     json_gen_str_end(&jstr);
+}
+
+// reprobe: SETTUNER의 다시 시험 결과(1 시작, 0 못 함), 요청이 없었으면 -1
+static void build_tuner_json(char* buffer, size_t size, int reprobe)
+{
+    json_gen_str_t jstr;
+    tTunerConfig config;
+    char* text = heap_caps_malloc(USB_INFO_TEXT_SIZE, MALLOC_CAP_SPIRAM);
+    char* line;
+    char* save = NULL;
+
+    fork_settings_get_tuner(&config);
+
+    json_gen_str_start(&jstr, buffer, size, NULL, NULL);
+    json_gen_start_object(&jstr);
+    json_gen_obj_set_string(&jstr, "CMD", "GETTUNER");
+#if CONFIG_TONEX_FORK_TUNER
+    json_gen_obj_set_int(&jstr, "FEATURE", 1);
+#else
+    json_gen_obj_set_int(&jstr, "FEATURE", 0);
+#endif
+    json_gen_obj_set_int(&jstr, "MODE", config.Mode);
+    json_gen_obj_set_int(&jstr, "CHANNEL", config.Channel);
+    if (reprobe >= 0)
+    {
+        json_gen_obj_set_int(&jstr, "REPROBE", reprobe);
+    }
+    json_gen_push_array(&jstr, "LINES");
+
+    if (text != NULL)
+    {
+        tuner_ctrl_copy_diag(text, USB_INFO_TEXT_SIZE);
+
+        for (line = strtok_r(text, "\n", &save); line != NULL; line = strtok_r(NULL, "\n", &save))
+        {
+            json_gen_arr_set_string(&jstr, line);
+        }
+
+        heap_caps_free(text);
+    }
+
+    json_gen_pop_array(&jstr);
+    json_gen_end_object(&jstr);
+    json_gen_str_end(&jstr);
+}
+
+// 메시지에 있는 항목만 바꾼다. 범위 밖 값은 무시한다(응답의 MODE·CHANNEL로 화면이 원래 값으로 돌아간다)
+// REPROBE: 1 = 자동 시험 후보, 2 = 프리셋이 바뀔 수 있는 후보까지 전부
+// RETURN: 다시 시험을 시작했으면 1, 못 했으면 0(원조 One 준비 전, USB 녹음만), 요청이 없었으면 -1
+static int apply_tuner(jparse_ctx_t* jctx)
+{
+    tTunerConfig config;
+    tTunerConfig before;
+    int int_val;
+
+    fork_settings_get_tuner(&config);
+    memcpy((void*)&before, (void*)&config, sizeof(config));
+
+    if ((json_obj_get_int(jctx, "MODE", &int_val) == OS_SUCCESS) && (int_val >= 0) && (int_val < TUNER_MODE_COUNT))
+    {
+        config.Mode = (uint8_t)int_val;
+    }
+
+    if ((json_obj_get_int(jctx, "CHANNEL", &int_val) == OS_SUCCESS) && (int_val >= 0) && (int_val < UAC_CHANNEL_MODE_COUNT))
+    {
+        config.Channel = (uint8_t)int_val;
+    }
+
+    if (memcmp((void*)&before, (void*)&config, sizeof(config)) != 0)
+    {
+        fork_settings_set_tuner(&config);
+        tuner_ctrl_apply_config();
+    }
+
+    if ((json_obj_get_int(jctx, "REPROBE", &int_val) == OS_SUCCESS) && (int_val > 0))
+    {
+        return tuner_ctrl_reprobe(int_val == 2);
+    }
+    return -1;
 }
 
 static int boost_result_code(uint8_t result)
@@ -266,6 +351,24 @@ static int apply_fork_config(jparse_ctx_t* jctx)
             }
             choc.Buttons[loop].Param = (uint8_t)int_val;
         }
+    }
+
+    if (json_obj_get_int(jctx, "TUNER_HOLD", &int_val) == OS_SUCCESS)
+    {
+        if ((int_val < -1) || (int_val >= CHOC_BUTTON_COUNT))
+        {
+            return CHOC_RESULT_BUTTON_RANGE;
+        }
+        choc.TunerHoldButton = (int_val < 0) ? CHOC_HOLD_NONE : (uint8_t)int_val;
+    }
+
+    if (json_obj_get_int(jctx, "HOLD_MS", &int_val) == OS_SUCCESS)
+    {
+        if ((int_val < (CHOC_HOLD_TIME_MIN * 10)) || (int_val > (CHOC_HOLD_TIME_MAX * 10)) || ((int_val % (CHOC_HOLD_TIME_STEP * 10)) != 0))
+        {
+            return CHOC_RESULT_BUTTON_RANGE;
+        }
+        choc.HoldTime = (uint8_t)(int_val / 10);
     }
 
     // packed 구조체 멤버는 주소로 넘기면 정렬이 안 맞을 수 있어 지역 변수를 거친다
@@ -357,6 +460,15 @@ void wifi_fork_handle_ws_command(httpd_req_t* req, jparse_ctx_t* jctx, const cha
     {
         build_usb_info_json(buffer, RESPONSE_BUFFER_SIZE);
     }
+    else if (strcmp(command, "GETTUNER") == 0)
+    {
+        build_tuner_json(buffer, RESPONSE_BUFFER_SIZE, -1);
+    }
+    else if (strcmp(command, "SETTUNER") == 0)
+    {
+        int reprobe = apply_tuner(jctx);
+        build_tuner_json(buffer, RESPONSE_BUFFER_SIZE, reprobe);
+    }
     else
     {
         ESP_LOGW(TAG, "Unknown ws command %s", command);
@@ -414,6 +526,7 @@ const char* wifi_fork_build_push(uint8_t type, uint16_t value)
             json_gen_obj_set_string(&jstr, "CMD", "CHOCEVENT");
             json_gen_obj_set_int(&jstr, "BUTTON", value);
             json_gen_obj_set_int(&jstr, "ACTION", (value < CHOC_BUTTON_COUNT) ? choc.Buttons[value].Action : CHOC_ACTION_NONE);
+            json_gen_obj_set_int(&jstr, "CHOC_INPUT", choc_exec_get_input_mode());
             json_gen_end_object(&jstr);
             json_gen_str_end(&jstr);
         } break;

@@ -40,6 +40,7 @@ limitations under the License.
 #include "display_fork_widgets.h"
 #include "display_fork_config.h"
 #include "display_fork_setup.h"
+#include "display_fork_tuner.h"
 
 static const char *TAG = "app_display_fork_setup";
 
@@ -76,6 +77,9 @@ typedef struct
     tForkStepper presets[CHOC_BUTTON_COUNT];
     lv_obj_t* last_pressed;
     lv_timer_t* highlight_timer;
+    lv_obj_t* hold_dropdown;
+    tForkStepper hold_time;
+    lv_obj_t* hold_hint;
 
     lv_obj_t* firmware_text;
     lv_obj_t* usb_text;
@@ -271,6 +275,37 @@ static void refresh_choc_status(void)
     }
 }
 
+// 길게 누름은 뗌 신호가 있는 Manufacturer Control 모드에서만 된다
+static void refresh_hold_hint(const tChocConfig* choc)
+{
+    uint8_t input = choc_exec_get_input_mode();
+    const char* text = "";
+    uint32_t color = FORK_COLOR_HINT;
+
+    if (choc->TunerHoldButton != CHOC_HOLD_NONE)
+    {
+        if (input == CHOC_INPUT_PRESS_RELEASE)
+        {
+            // E·F 앞에 A~D가 따로 오는지는 실물 미확인이다(구현 노트 5장)
+            text = (choc->TunerHoldButton >= CHOC_BUTTON_E) ? "Hold works, but E/F is\nunchecked: prefer A-D.\nShort press: on release" :
+                                                              "Hold works with this\nChocolate mode. Short\npress runs on release";
+            color = FORK_COLOR_OK;
+        }
+        else if (input == CHOC_INPUT_TAP)
+        {
+            text = "Chocolate is in Program\nchange mode: set it to\nManufacturer Control";
+            color = FORK_COLOR_ORANGE;
+        }
+        else
+        {
+            text = "Needs Manufacturer\nControl mode. Press a\nbutton to check it";
+        }
+    }
+
+    lv_label_set_text(Setup.hold_hint, text);
+    lv_obj_set_style_text_color(Setup.hold_hint, lv_color_hex(color), 0);
+}
+
 void fork_setup_refresh_choc(void)
 {
     tChocConfig choc;
@@ -284,6 +319,14 @@ void fork_setup_refresh_choc(void)
     fork_settings_get_choc(&choc);
     refresh_choc_status();
     fork_ui_set_checked(Setup.mapping_switch, choc.TranslateEnable);
+
+    lv_dropdown_set_selected(Setup.hold_dropdown, (choc.TunerHoldButton < CHOC_BUTTON_COUNT) ? (choc.TunerHoldButton + 1) : 0);
+    snprintf(text, sizeof(text), "%.1f s", (double)choc.HoldTime / 100.0);
+    lv_label_set_text(Setup.hold_time.value, text);
+    fork_ui_set_visible(Setup.hold_time.minus, choc.TunerHoldButton != CHOC_HOLD_NONE);
+    fork_ui_set_visible(Setup.hold_time.value, choc.TunerHoldButton != CHOC_HOLD_NONE);
+    fork_ui_set_visible(Setup.hold_time.plus, choc.TunerHoldButton != CHOC_HOLD_NONE);
+    refresh_hold_hint(&choc);
 
     for (uint8_t loop = 0; loop < CHOC_BUTTON_COUNT; loop++)
     {
@@ -329,6 +372,34 @@ static void preset_step_cb(lv_event_t* e)
     fork_settings_set_choc(&choc);
 }
 
+static void hold_button_cb(lv_event_t* e)
+{
+    uint16_t selected = lv_dropdown_get_selected(lv_event_get_target(e));
+    tChocConfig choc;
+
+    fork_settings_get_choc(&choc);
+    choc.TunerHoldButton = (selected == 0) ? CHOC_HOLD_NONE : (uint8_t)(selected - 1);
+    fork_settings_set_choc(&choc);
+}
+
+static void hold_time_cb(lv_event_t* e)
+{
+    uint16_t user = (uint16_t)(uintptr_t)lv_event_get_user_data(e);
+    tChocConfig choc;
+    int16_t value;
+
+    fork_settings_get_choc(&choc);
+    value = (int16_t)choc.HoldTime + ((user & FORK_STEP_UP) ? CHOC_HOLD_TIME_STEP : -CHOC_HOLD_TIME_STEP);
+
+    if ((value < CHOC_HOLD_TIME_MIN) || (value > CHOC_HOLD_TIME_MAX))
+    {
+        return;
+    }
+
+    choc.HoldTime = (uint8_t)value;
+    fork_settings_set_choc(&choc);
+}
+
 static void mapping_switch_cb(lv_event_t* e)
 {
     tChocConfig choc;
@@ -367,6 +438,7 @@ void fork_setup_highlight_button(uint8_t button)
     fork_settings_get_choc(&choc);
     snprintf(text, sizeof(text), "Last pressed: %s - %s", choc_map_button_name(button), choc_map_action_name(choc.Buttons[button].Action));
     lv_label_set_text(Setup.last_pressed, text);
+    refresh_hold_hint(&choc);
 
     lv_timer_reset(Setup.highlight_timer);
     lv_timer_resume(Setup.highlight_timer);
@@ -413,7 +485,14 @@ static void create_choc_tab(lv_obj_t* tabview)
         fork_ui_stepper(tab, column_x + 256, row_y + 2, 40, preset_step_cb, loop, &Setup.presets[loop]);
     }
 
-    Setup.last_pressed = fork_ui_label(tab, "Last pressed: -", 12, 292, &lv_font_montserrat_20, FORK_COLOR_HINT);
+    Setup.last_pressed = fork_ui_label(tab, "Last pressed: -", 12, 280, &lv_font_montserrat_20, FORK_COLOR_HINT);
+
+    // 일반 이펙터처럼 버튼을 길게 눌러 튜너를 여닫는다. 오른쪽 아래 닫기(체크) 자리는 비운다
+    fork_ui_label(tab, "Hold for tuner", 12, 322, &lv_font_montserrat_20, FORK_COLOR_TEXT);
+    Setup.hold_dropdown = fork_ui_dropdown(tab, "Off\nA\nB\nC\nD\nE\nF", 160, 312, 104, hold_button_cb, NULL);
+    fork_ui_stepper(tab, 280, 314, 74, hold_time_cb, 0, &Setup.hold_time);
+    Setup.hold_hint = fork_ui_label(tab, "", 460, 312, &lv_font_montserrat_14, FORK_COLOR_HINT);
+    lv_obj_set_width(Setup.hold_hint, 230);
 
     Setup.highlight_timer = lv_timer_create(highlight_timer_cb, BUTTON_HIGHLIGHT_MSEC, NULL);
     lv_timer_pause(Setup.highlight_timer);
@@ -527,6 +606,7 @@ void fork_setup_create(void)
 
     create_boost_tab(Setup.tabview);
     create_choc_tab(Setup.tabview);
+    display_fork_tuner_create_tab(Setup.tabview);
     fork_config_create_tabs(Setup.tabview);
     create_info_tab(Setup.tabview);
 
@@ -556,9 +636,15 @@ void fork_setup_open(void)
     fork_setup_refresh_boost();
     fork_setup_refresh_choc();
     fork_setup_refresh_usb();
+    display_fork_tuner_refresh_tab();
     refresh_firmware();
 
     lv_scr_load_anim(Setup.screen, LV_SCR_LOAD_ANIM_FADE_IN, 0, 0, false);
+}
+
+uint8_t fork_setup_is_active(void)
+{
+    return (Setup.screen != NULL) && (lv_scr_act() == Setup.screen);
 }
 
 // 장치가 바뀌면(USB 연결) 프리셋 개수와 부스트 지원 여부가 달라진다

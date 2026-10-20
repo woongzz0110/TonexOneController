@@ -27,6 +27,7 @@ limitations under the License.
 #include "usb/usb_helpers.h"
 #include "usb_desc_info.h"
 #include "display_fork.h"
+#include "tuner_audio.h"
 
 #define DESC_INFO_TEXT_SIZE         (6 * 1024)
 #define MAX_AUDIO_IN_CANDIDATES     8
@@ -389,6 +390,8 @@ void usb_desc_info_capture(usb_device_handle_t dev_hdl)
     }
 
     ESP_LOGI(TAG, "descriptor summary %d bytes", (int)builder.used);
+
+    tuner_audio_on_device(dev_hdl);
 
 #if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
     UI_RefreshUsbInfo();

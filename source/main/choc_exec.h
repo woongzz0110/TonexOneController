@@ -38,4 +38,14 @@ void choc_exec_on_ble_opened(void);
 void choc_exec_on_ble_disconnected(void);
 uint8_t choc_exec_get_link_state(void);
 
+// 웹 프로토콜 값(fork.js CHOC_INPUT_*): 마지막으로 받은 초콜릿 신호 종류
+enum ChocInputModes
+{
+    CHOC_INPUT_NONE,
+    CHOC_INPUT_TAP,             // Program change 모드: 뗌을 몰라 길게 누름이 안 된다
+    CHOC_INPUT_PRESS_RELEASE    // Manufacturer Control 모드
+};
+uint8_t choc_exec_get_input_mode(void);
+
+// 짧게 누른 것과 같다(웹 '실행' 버튼)
 void choc_exec_run_button(uint8_t button);

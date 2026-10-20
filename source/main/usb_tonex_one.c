@@ -62,6 +62,7 @@ limitations under the License.
 #include "wifi_config.h"
 #include "tonex_params.h"
 #include "boost_ctrl.h"
+#include "tuner_ctrl.h"
 
 static const char *TAG = "app_TonexOne";
 
@@ -376,6 +377,9 @@ static esp_err_t usb_tonex_one_request_tuner(uint8_t state)
     //                                                                                                 ! state
     uint8_t request[] = {0xb9, 0x03, 0x81, 0x0F, 0x03, 0x82, 0x03, 0x00, 0x80, 0x19, 0x03, 0xB9, 0x01, 0x00};
     request[13] = state;
+
+    // fork: 원조 One용 요청 번호 후보로 바꾸고, USB 녹음만 쓰는 설정이면 보내지 않는다 (tuner_ctrl.c)
+    if (!tuner_ctrl_prepare_one_request(request, sizeof(request))) { return ESP_OK; }
 
     ESP_LOGI(TAG, "Requesting Tuner");
 
@@ -1077,6 +1081,9 @@ static TonexStatus usb_tonex_one_parse(uint8_t* message, uint16_t inlength)
     tHeader header;
     uint8_t index = 2;
     uint16_t type = tonex_common_parse_value(FramedBuffer, &index);
+
+    // fork: 튜너 응답 후보·모르는 메시지·상태 변화를 기록한다 (tuner_ctrl.c)
+    tuner_ctrl_on_one_frame(type, FramedBuffer, out_len);
 
     switch (type)
     {

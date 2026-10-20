@@ -22,7 +22,8 @@ TONEX One의 USB 오디오(녹음 채널)를 보드가 받아 직접 음정을 �
 
 ### 왜 이 방식인가
 
-- 원조 TONEX One은 튜너 데이터를 USB로 보내지 않는다. 제작자가 ONE+ 튜너 요청을 One에도 보내봤지만 반응이 없었다(`usb_tonex_one.c`의 `usb_tonex_one_request_tuner()` 주석, 커밋 95e80f0).
+- 원조 TONEX One은 튜너 데이터를 USB로 보내지 않는다. 제작자가 ONE+ 튜너 요청을 One에도 보내봤지만 반응이 없었다(`usb_tonex_one_request_tuner()` 주석 커밋 39d6aaf, 업스트림 이슈 #448).
+  다만 보낸 요청은 ONE+ 메시지 번호 그대로였고, 같은 기능의 번호가 모델마다 다르다(구현 노트 3-5). One 번호 체계로 옮긴 요청은 아무도 시도하지 않았다.
 - ONE+의 튜너 스트림(메시지 타입 `0x0310`)은 모바일 앱용이다. 원조 One은 모바일 앱이 없고 PC 에디터는 튜너를 다루지 않아서, One 펌웨어에 해당 기능이 있을 가능성은 낮다.
 - 튜너 UI는 이미 있다. `display.c`의 `UI_SetTunerFrequencies(cents, ref_freq, midi_note)`에 값만 넣으면 원형 게이지와 음이름이 그려진다. 튜너 아이콘은 ONE+일 때만 보이므로 이 조건만 푼다.
 
@@ -30,11 +31,11 @@ TONEX One의 USB 오디오(녹음 채널)를 보드가 받아 직접 음정을 �
 
 | 항목 | 내용 | 판단 |
 | --- | --- | --- |
-| TONEX One USB 구성 | 복합 장치, 인터페이스 5개: CDC("ToneX Control VCOM") + Audio Class 2.0("ToneX One Record", "In 1/In 2") | 녹음 스트림 존재 |
-| 대역폭 | 48kHz·24bit·스테레오 ≈ 294바이트/ms, 약 2.4Mbps | Full-Speed(12Mbps)로 충분 |
-| USB 하드웨어 FIFO | 기본 Balanced = 수신 408바이트, Bias IN = 600바이트 | 294바이트 패킷 수용 |
+| TONEX One USB 구성 | 복합 장치, 인터페이스 5개: CDC + Audio Class 2.0. 녹음은 IF 3 alt 1, EP 0x84, 클럭 ID 7(공개된 HS 덤프) | 녹음 스트림 존재 |
+| 오디오 형식 | 44.1kHz, 32비트 칸 24비트, 스테레오(처리된 소리, DI 없음) | 1ms에 360~368바이트 필요 |
+| USB 하드웨어 FIFO | 기본 Balanced = 수신 약 408바이트, Bias IN = 약 600바이트 | 368바이트 패킷 수용 |
 | CDC와 동시 사용 | ESP-IDF USB Host는 한 장치의 다른 인터페이스를 여러 클라이언트가 각각 사용 가능 | 구조상 가능 |
-| **Full-Speed에서 오디오 제공 여부** | TONEX One은 원래 High-Speed 장치. FS 연결 시 오디오를 빼거나 UAC1로 바꾸는 장치도 있음 | **미확인, 실물로 확인 필요** |
+| **Full-Speed에서 오디오 제공 여부** | HS 덤프의 녹음 패킷은 56바이트(125µs용). FS에서도 56이면 담을 수 없다. ESP32-S3로 시도한 사람은 "HS가 필요해 보인다"고 결론 | **가능성 낮음, 실물로 확인 필요** |
 
 ### 구현 개요
 
@@ -269,6 +270,7 @@ BT·Wi-Fi·유선 MIDI 같은 시스템 설정은 부팅 때 초기화되어 저
 - [ ] 녹음 채널이 처리된 신호인지 DI(원음)인지
 - [ ] 글로벌 볼륨 -40dB에서 USB 녹음 신호도 작아지는지
 - [ ] (선택) 본체 풋스위치로 튜너를 켰을 때 USB로 미확인 메시지(`Unknown type`)가 들어오는지
+- 위 항목은 포크 튜너 보고서(Setup > Tuner, 웹 Config > Firmware > 튜너)에 한 번에 나온다(구현 노트 5장).
 
 **기타**
 
@@ -278,7 +280,7 @@ BT·Wi-Fi·유선 MIDI 같은 시스템 설정은 부팅 때 초기화되어 저
 ## 참고: 현재 사용 중인 설정 (개조 전)
 
 - 보드 BT: Bluetooth Mode = Central, Chocolate Series = 켜짐, Midi CC on BT = 켜짐
-- 초콜릿(CubeSuite)은 개조 전까지 커스텀 모드로 A=볼륨 부스트 토글(CC 122), B=기본 볼륨 복귀(CC 122), C=프리셋 다운(CC 86), D=프리셋 업(CC 87)을 임시로 쓰고 있다. 번역 계층 적용 후에는 **Program change A 모드로 되돌린다.**
+- 초콜릿(CubeSuite)은 개조 전까지 커스텀 모드로 A=볼륨 부스트 토글(CC 122), B=기본 볼륨 복귀(CC 122), C=프리셋 다운(CC 86), D=프리셋 업(CC 87)을 임시로 쓰고 있다. 번역 계층 적용 후에는 **Program change A 모드로 되돌린다.** 길게 눌러 튜너를 쓰려면 대신 **Manufacturer Control 모드**로 둔다(뗄 때도 신호가 와야 길게 누름을 안다, 구현 노트 3-2).
 - 초콜릿 기본 모드의 동시 누르기(CC 2/3, 값 5)는 TONEX의 딜레이 On/Off·타입과 번호가 겹친다. 그래서 업스트림은 Midi CC on BT를 기본으로 꺼둔다.
 
 ## 출처
@@ -287,6 +289,9 @@ BT·Wi-Fi·유선 MIDI 같은 시스템 설정은 부팅 때 초기화되어 저
 - [MidiCommands.md](https://github.com/Builty/TonexOneController/blob/main/MidiCommands.md) — 컨트롤러 CC 대응표
 - [HardwarePlatform_Waveshare4.3B.md](https://github.com/Builty/TonexOneController/blob/main/HardwarePlatform_Waveshare4.3B.md) — 4.3B 배선·전원
 - [Issue #476 — ToneX One+ Tuner not working on ESP 4.3B](https://github.com/Builty/TonexOneController/issues/476)
+- [Issue #448](https://github.com/Builty/TonexOneController/issues/448) — ONE+ 튜너 요청을 One에 보냈으나 무시, ESP32-S3 녹음 시도 결론 / [Discussion #224](https://github.com/Builty/TonexOneController/discussions/224) — One 원격 튜너 없음
+- [tx-one-control 하드웨어 덤프](https://github.com/p-prakapienka/tx-one-control/blob/HEAD/docs/hardware-probes/tonexprobe20260819_220308.log.txt) — TONEX One HS 디스크립터(녹음 EP 0x84, mps 56, 클럭 7)
+- [Tonex-Linux-Fix](https://github.com/elroyski/Tonex-Linux-Fix) — 44.1kHz S32_LE 스테레오, 클럭 초기화 순서 / [madejm usb-audio-workbench](https://github.com/madejm/TonexOneController/tree/usb-audio-workbench) — ESP32-S3 녹음 시도
 - [MOD Audio Forum — MIDI "Chocolate" controller 튜토리얼](https://forum.mod.audio/t/midi-chocolate-controller-with-the-mod-dwarf-an-introduction/7003) — CubeSuite 모드별 신호
 - [Espressif usb_host_uac](https://components.espressif.com/components/espressif/usb_host_uac) — UAC 1.0만 지원
 - [esp-uac2-host](https://tomevault.io/tome/Averyy/esp-uac2-host) — 커뮤니티 UAC2 호스트 드라이버

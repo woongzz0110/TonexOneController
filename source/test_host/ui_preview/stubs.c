@@ -14,7 +14,126 @@
 #include "display_fork.h"
 #include "control.h"
 #include "ota_update.h"
+#include "usb_comms.h"
+#include "tuner_proto.h"
+#include "tuner_audio.h"
+#include "tuner_ctrl.h"
 #include "preview.h"
+
+uint8_t PreviewModeller = AMP_MODELLER_TONEX_ONE;
+uint8_t PreviewTunerSource = TUNER_SOURCE_NONE;
+uint8_t PreviewTunerProbing = 0;
+uint8_t PreviewTunerProbeIndex = 0;
+uint8_t PreviewTunerAudioState = TUNER_AUDIO_NO_STREAM;
+uint8_t PreviewTunerPedalOn = 0;
+
+static tTunerConfig Tuner;
+static uint8_t TunerLoaded = 0;
+
+uint8_t PreviewChocInput = CHOC_INPUT_NONE;
+
+uint8_t usb_get_connected_modeller_type(void)
+{
+    return PreviewModeller;
+}
+
+uint8_t choc_exec_get_input_mode(void)
+{
+    return PreviewChocInput;
+}
+
+void fork_settings_get_tuner(tTunerConfig* config)
+{
+    if (!TunerLoaded)
+    {
+        tuner_config_set_default(&Tuner);
+        TunerLoaded = 1;
+    }
+    memcpy(config, &Tuner, sizeof(Tuner));
+}
+
+void fork_settings_set_tuner(const tTunerConfig* config)
+{
+    memcpy(&Tuner, config, sizeof(Tuner));
+    tuner_config_sanitize(&Tuner);
+    TunerLoaded = 1;
+}
+
+void tuner_audio_on_device(usb_device_handle_t dev_hdl)
+{
+    (void)dev_hdl;
+}
+
+void tuner_ctrl_init(void)
+{
+}
+
+void tuner_ctrl_on_screen(uint8_t open)
+{
+    (void)open;
+}
+
+uint8_t tuner_ctrl_handles_connected_pedal(void)
+{
+    return PreviewModeller == AMP_MODELLER_TONEX_ONE;
+}
+
+void tuner_ctrl_apply_config(void)
+{
+}
+
+uint8_t tuner_ctrl_reprobe(uint8_t all)
+{
+    (void)all;
+    return 1;
+}
+
+void tuner_ctrl_get_status(tTunerStatus* status)
+{
+    memset(status, 0, sizeof(tTunerStatus));
+    status->screen_open = 1;
+    status->source = PreviewTunerSource;
+    status->probing = PreviewTunerProbing;
+    status->probe_pos = PreviewTunerProbeIndex;
+    status->probe_count = tuner_auto_candidate_count();
+    status->pedal_on = PreviewTunerPedalOn;
+    status->mode = TUNER_MODE_AUTO;
+    status->audio_state = PreviewTunerAudioState;
+    status->rate = 44100;
+    status->level_db = -27.0f;
+}
+
+// 보드의 진단 글과 같은 모양의 예시(실측 아님): 페달 후보는 모두 무응답, FS 녹음 패킷이 모자란 경우
+size_t tuner_ctrl_copy_diag(char* out, size_t size)
+{
+    static const char* Sample =
+        "PREVIEW SAMPLE (not measured)\n"
+        "Uptime 75.2 s, internal heap free 61234 (largest 30720)\n"
+        "Stack free bytes: ctrl 1840, usb 2210, dsp 0 (0 = task not started)\n"
+        "Mode Auto, channel Mix 1+2, tuner screen closed, source none yet\n"
+        "-- Pedal tuner messages (hope 1) --\n"
+        "Result: no candidate gave tuner values this boot (not saved; asks again after reboot, or Probe pedal while playing)\n"
+        " 0 0312/030B one-numbering: no unknown-type reply, on 1004 ms\n"
+        " 1 0312/030F one-numbering +4: reply 0006 (expected 0313), on 1003 ms\n"
+        "   first reply: b9 03 81 06 00 82 02 00 80 0b 03\n"
+        " 2 0312/0319: no unknown-type reply, on 1005 ms\n"
+        " 3 030F/0319 one-plus (ignored): no unknown-type reply, on 1002 ms\n"
+        " 4 0311/030B may change preset: not tried [Probe all only]\n"
+        " 5 030F/030B may change slot: not tried [Probe all only]\n"
+        "Requests: sent 8, resent 0, layout changed 0, values not credited 0\n"
+        "Probes stopped: queue lost 0, closed/unplugged/source changed 0\n"
+        "Not sent on purpose: audio-only 0, no candidate 1, probe running 0, nothing on 0, late 0\n"
+        "Frames: 1520 (unknown 2, tuner 0, tuner while closed 0)\n"
+        "State updates: 14, last len 412 at 63.2 s, changed 1 byte(s) @377 00>01\n"
+        "-- USB audio (hope 2) --\n"
+        "State: stream too small for 44.1 kHz at this USB speed\n"
+        "Device 1, FULL speed, audio IN streams 1\n"
+        "Stream: IF 3 alt 1 EP 84 UAC2 2ch 24bit(4) mps 56 interval 1 async clock 7 AC IF 2\n"
+        "Packet: mps 56 < 360 needed per 1 ms at 44100 Hz -> TOO SMALL (pedal likely needs High-Speed USB)\n";
+
+    snprintf(out, size, "%s", Sample);
+    return strlen(out);
+}
 
 uint8_t PreviewSupported = 1;
 uint8_t PreviewVolumeKnown = 1;

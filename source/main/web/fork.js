@@ -18,16 +18,25 @@
         '공간계 On/Off',
         '모듈레이션 On/Off',
         '컴프 On/Off',
-        '노이즈게이트 On/Off'
+        '노이즈게이트 On/Off',
+        '튜너 열기/닫기'
     ];
     const CHOC_ACTION_PRESET_SELECT = 7;
     const CHOC_BUTTONS = ['A', 'B', 'C', 'D', 'E', 'F'];
+    // tuner_proto.h TunerModes, uac_stream.h UacChannelModes
+    const TUNER_MODES = ['자동(페달 메시지 → USB 녹음)', '페달 메시지만', 'USB 녹음만'];
+    const TUNER_CHANNELS = ['1+2 평균', '1번', '2번'];
+    const TUNER_REFRESH_MSEC = 1000;
 
     // 업스트림 Bluetooth 설정 값(control.h BT_MODE_*)
     const BT_MODE_CENTRAL = 1;
     // choc_exec.h ChocLinkStates
     const CHOC_STATE_CONNECTING = 1;
     const CHOC_STATE_CONNECTED = 2;
+    // choc_exec.h ChocInputModes
+    const CHOC_INPUT_TAP = 1;
+    const CHOC_INPUT_PRESS_RELEASE = 2;
+    let chocInput = 0;
 
     const BOOST_MIN_DB = -40;
     const BOOST_MAX_DB = 3;
@@ -57,7 +66,7 @@
     // 두 페이지가 같은 설정 메시지(GETFORKCONFIG)를 받으므로, 손대는 중인 페이지는 그 페이지 값이 실제로 바뀌었을 때만 알린다
     const pages = {
         boost: { dirty: false, loaded: false, note: 'fork_boost_note', keys: /^BOOST_(OFF|ON|BOOT_OFF)$/, snapshot: '' },
-        choc: { dirty: false, loaded: false, note: 'fork_choc_note', keys: /^(TRANSLATE|BTN\d_(ACT|PRM))$/, snapshot: '' }
+        choc: { dirty: false, loaded: false, note: 'fork_choc_note', keys: /^(TRANSLATE|BTN\d_(ACT|PRM)|TUNER_HOLD|HOLD_MS)$/, snapshot: '' }
     };
     // 한 연결 안에서 저장 결과(FORKCONFIGRESULT)는 보낸 순서대로 온다
     const savingPages = [];
@@ -98,7 +107,7 @@
         #ForkBoost .form-check-label, #ForkChocolate .form-check-label { margin-left: 8px; }
         .fork-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
         .fork-field { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin: 0; }
-        #fork_usb_info { background: #111; color: #ddd; padding: 8px; font-size: 0.8rem; max-height: 420px;
+        #fork_usb_info, #fork_tuner_info { background: #111; color: #ddd; padding: 8px; font-size: 0.8rem; max-height: 420px;
                          overflow: auto; white-space: pre; }
     `;
 
@@ -164,11 +173,28 @@
                         <label class="form-check-label" for="fork_translate">버튼 매핑 사용</label>
                     </div>
                     <p class="fork-muted">켜면 초콜릿 버튼이 아래 동작을 실행합니다. 끄면 초콜릿 MIDI를 다른 MIDI 장치와 같이
-                       기존 방식(PC = 프리셋 선택, CC = Midi 설정)으로 처리합니다.</p>
+                       기존 방식(PC = 프리셋 선택, CC = Midi 설정)으로 처리합니다.
+                       켜 두면 초콜릿이 보내는 CC 20~25는 버튼 신호로만 쓰고 TONEX 설정 변경으로 넘기지 않습니다.</p>
 
                     <div class="fork-rows">${rows}</div>
-                    <p class="fork-muted">CubeSuite에서 초콜릿을 Program change A 모드로 두세요. E는 A+B, F는 C+D를 함께 누른 것입니다.
-                       '프리셋 직접 선택'을 고르면 그 줄에 프리셋 번호 칸이 나타나고, '실행'은 그 버튼을 누른 것과 같습니다.</p>
+                    <p class="fork-muted">초콜릿은 CubeSuite에서 Program change A 모드나 Manufacturer Control 모드로 둡니다. E는 A+B, F는 C+D를 함께 누른 것입니다.
+                       '프리셋 직접 선택'을 고르면 그 줄에 프리셋 번호 칸이 나타나고, '실행'은 그 버튼을 짧게 누른 것과 같습니다.</p>
+
+                    <div class="fork-fields">
+                        <div class="fork-field">길게 눌러 튜너 열기/닫기
+                            <select class="form-select" id="fork_hold_button">
+                                <option value="-1">사용 안 함</option>
+                                ${CHOC_BUTTONS.map((name, index) => `<option value="${index}">${name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="fork-field">누르는 시간
+                            <input type="number" class="form-control text_entry_style" id="fork_hold_time" min="0.3" max="2.0" step="0.1" value="0.8" style="width: 6em;"> 초
+                        </div>
+                    </div>
+                    <p class="fork-muted">길게 누름은 뗄 때도 신호를 보내는 Manufacturer Control 모드에서만 됩니다(Program change 모드는 누를 때만 보냅니다).
+                       길게 누름으로 고른 버튼의 원래 동작은 짧게 눌렀다 뗄 때 실행됩니다(탭 템포 버튼이면 그만큼 늦어집니다).
+                       E·F를 길게 누름 버튼으로 쓰는 것은 실물로 확인하지 않았으니 A~D 가운데서 고르기를 권합니다.</p>
+                    <p class="fork-note" id="fork_hold_hint"></p>
                     <p class="fork-note" id="fork_choc_note"></p>
 
                     <button type="button" class="btn btn-success" id="fork_choc_save">저장 (즉시 적용)</button>
@@ -203,6 +229,27 @@
                     <button type="button" class="btn btn-secondary" id="fork_usb_refresh">새로고침</button>
                     <button type="button" class="btn btn-secondary" id="fork_usb_copy">복사</button>
                     <pre id="fork_usb_info" class="mt-2">-</pre>
+
+                    <br>
+                    <h6 class="selected_text">튜너 (원조 TONEX One)</h6>
+                    <p class="fork-muted">튜너 화면을 처음 열면 페달에 튜너 요청 번호 후보 4개를 1초씩 차례로 보내 보고(그동안 기타 줄을 튕기세요), 튜너 값이 오지 않으면 USB 녹음으로 음을 잽니다.
+                       실물로 확인할 때 아래 보고서를 복사해 보내 주세요. 페달 본체 튜너(풋스위치 길게)를 켰다 끄면 상태 변화도 기록됩니다.</p>
+                    <div class="fork-field">신호 출처
+                        <select class="form-select" id="fork_tuner_mode">
+                            ${TUNER_MODES.map((label, value) => `<option value="${value}">${label}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="fork-field">USB 녹음 채널
+                        <select class="form-select" id="fork_tuner_channel">
+                            ${TUNER_CHANNELS.map((label, value) => `<option value="${value}">${label}</option>`).join('')}
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-warning" id="fork_tuner_probe">페달 다시 시험</button>
+                    <button type="button" class="btn btn-outline-warning" id="fork_tuner_probe_all" title="프리셋·슬롯이 바뀔 수 있는 번호까지 6개 모두">전체 후보 시험</button>
+                    <button type="button" class="btn btn-secondary" id="fork_tuner_refresh">새로고침</button>
+                    <button type="button" class="btn btn-secondary" id="fork_tuner_copy">복사</button>
+                    <label class="fork-muted ms-2"><input type="checkbox" id="fork_tuner_auto" checked> 1초마다 새로고침</label>
+                    <pre id="fork_tuner_info" class="mt-2">-</pre>
                 </div>
             </div>
         </div>`;
@@ -228,6 +275,8 @@
             document.getElementById(`fork_test_${index}`).addEventListener('click', () => sendWS({ CMD: 'CHOCTEST', BUTTON: index }));
         });
         document.getElementById('fork_translate').addEventListener('change', () => { pages.choc.dirty = true; });
+        document.getElementById('fork_hold_button').addEventListener('change', () => { pages.choc.dirty = true; updateHoldHint({}); });
+        document.getElementById('fork_hold_time').addEventListener('input', () => { pages.choc.dirty = true; });
         document.getElementById('fork_choc_save').addEventListener('click', saveChocolate);
         document.getElementById('fork_choc_reload').addEventListener('click', () => reloadPage('choc'));
 
@@ -240,7 +289,51 @@
 
         document.getElementById('fork_fw_upload').addEventListener('click', uploadFirmware);
         document.getElementById('fork_usb_refresh').addEventListener('click', () => sendWS({ CMD: 'GETUSBINFO' }));
-        document.getElementById('fork_usb_copy').addEventListener('click', copyUsbInfo);
+        document.getElementById('fork_usb_copy').addEventListener('click', () => copyText('fork_usb_info', 'USB 정보'));
+
+        document.getElementById('fork_tuner_mode').addEventListener('change', event =>
+            sendWS({ CMD: 'SETTUNER', MODE: Number(event.target.value) }));
+        document.getElementById('fork_tuner_channel').addEventListener('change', event =>
+            sendWS({ CMD: 'SETTUNER', CHANNEL: Number(event.target.value) }));
+        document.getElementById('fork_tuner_probe').addEventListener('click', () => sendWS({ CMD: 'SETTUNER', REPROBE: 1 }));
+        document.getElementById('fork_tuner_probe_all').addEventListener('click', () => {
+            if (window.confirm('뒤의 두 후보는 TONEX One의 슬롯·프리셋 선택 명령일 수 있어 시험 중 소리가 바뀔 수 있습니다. 6개 모두 시험할까요?')) {
+                sendWS({ CMD: 'SETTUNER', REPROBE: 2 });
+            }
+        });
+        document.getElementById('fork_tuner_refresh').addEventListener('click', () => sendWS({ CMD: 'GETTUNER' }));
+        document.getElementById('fork_tuner_copy').addEventListener('click', () => copyText('fork_tuner_info', '튜너 보고서'));
+
+        // 보고 있을 때만 묻는다(다른 화면에서는 웹소켓을 쓰지 않는다)
+        setInterval(() => {
+            if (document.getElementById('ForkFirmware').classList.contains('active') &&
+                document.getElementById('fork_tuner_auto').checked && !uploading) {
+                sendWS({ CMD: 'GETTUNER' });
+            }
+        }, TUNER_REFRESH_MSEC);
+    }
+
+    function applyTuner(data) {
+        const info = document.getElementById('fork_tuner_info');
+
+        if (!data['FEATURE']) {
+            info.textContent = '이 펌웨어 빌드에는 포크 튜너가 없습니다.';
+            return;
+        }
+
+        // 고르는 중인 목록은 덮지 않는다
+        ['fork_tuner_mode', 'fork_tuner_channel'].forEach((id, index) => {
+            const select = document.getElementById(id);
+            if (document.activeElement !== select) {
+                select.value = String(data[index === 0 ? 'MODE' : 'CHANNEL']);
+            }
+        });
+        info.textContent = (data['LINES'] || []).join('\n') || '-';
+
+        if ('REPROBE' in data) {
+            setToast(data['REPROBE'] ? '페달 시험을 시작했습니다. 바로 줄을 계속 튕기세요.'
+                                     : '시험하지 않았습니다: 원조 TONEX One이 아직 준비되지 않았거나 신호 출처가 USB 녹음만입니다.');
+        }
     }
 
     function showSection(target) {
@@ -261,6 +354,7 @@
         } else if (target === 'ForkFirmware') {
             sendWS({ CMD: 'GETFWINFO' });
             sendWS({ CMD: 'GETUSBINFO' });
+            sendWS({ CMD: 'GETTUNER' });
         }
     }
 
@@ -423,8 +517,39 @@
             message[`BTN${index}_PRM`] = preset;
         }
 
+        const holdMs = Math.round(parseFloat(document.getElementById('fork_hold_time').value) * 10) * 100;
+        if (isNaN(holdMs) || holdMs < 300 || holdMs > 2000) {
+            document.getElementById('fork_choc_note').textContent = '누르는 시간은 0.3 ~ 2.0초(0.1초 단위)입니다.';
+            return;
+        }
+        message['TUNER_HOLD'] = parseInt(document.getElementById('fork_hold_button').value);
+        message['HOLD_MS'] = holdMs;
+
         savingPages.push('choc');
         sendWS(message);
+    }
+
+    // choc_exec.h ChocInputModes
+    function updateHoldHint(data) {
+        const hint = document.getElementById('fork_hold_hint');
+        const hold = parseInt(document.getElementById('fork_hold_button').value);
+
+        if ('CHOC_INPUT' in data) {
+            chocInput = data['CHOC_INPUT'];
+        }
+
+        if (hold < 0) {
+            hint.textContent = '';
+        } else if (chocInput === CHOC_INPUT_PRESS_RELEASE) {
+            hint.textContent = '초콜릿이 누름·뗌을 보내고 있어 길게 누름이 동작합니다.';
+            hint.className = 'fork-ok';
+        } else if (chocInput === CHOC_INPUT_TAP) {
+            hint.textContent = '초콜릿이 Program change 모드입니다. 길게 누르려면 Manufacturer Control 모드로 바꾸세요.';
+            hint.className = 'fork-note';
+        } else {
+            hint.textContent = '초콜릿 버튼을 한 번 누르면 길게 누름이 되는 모드인지 여기 표시됩니다.';
+            hint.className = 'fork-muted';
+        }
     }
 
     function applyChocolateConfig(data) {
@@ -433,7 +558,12 @@
             document.getElementById(`fork_act_${index}`).value = data[`BTN${index}_ACT`];
             document.getElementById(`fork_prm_${index}`).value = data[`BTN${index}_PRM`];
         });
+        if ('TUNER_HOLD' in data) {
+            document.getElementById('fork_hold_button').value = String(data['TUNER_HOLD']);
+            document.getElementById('fork_hold_time').value = (data['HOLD_MS'] / 1000).toFixed(1);
+        }
         updatePresetFields();
+        updateHoldHint(data);
     }
 
     function updateChocolateStatus(data) {
@@ -668,15 +798,15 @@
         request.send(file);
     }
 
-    function copyUsbInfo() {
-        const text = document.getElementById('fork_usb_info').textContent;
+    function copyText(elementId, label) {
+        const text = document.getElementById(elementId).textContent;
         const area = document.createElement('textarea');
         area.value = text;
         document.body.appendChild(area);
         area.select();
         try {
             document.execCommand('copy');
-            setToast('USB 정보를 복사했습니다');
+            setToast(`${label}를 복사했습니다`);
         } catch (e) {
             setToast('복사 실패: 길게 눌러 직접 선택하세요');
         }
@@ -697,6 +827,7 @@
 
             case 'CHOCEVENT':
                 highlightButton(data['BUTTON']);
+                updateHoldHint(data);
                 return true;
 
             case 'FORKCONFIGRESULT':
@@ -709,6 +840,10 @@
 
             case 'GETUSBINFO':
                 document.getElementById('fork_usb_info').textContent = (data['LINES'] || []).join('\n') || '-';
+                return true;
+
+            case 'GETTUNER':
+                applyTuner(data);
                 return true;
         }
 

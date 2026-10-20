@@ -21,6 +21,8 @@ check $M/control.c              'boost_ctrl_on_sync_complete();'
 check $M/usb_comms.c            'boost_ctrl_on_usb_disconnected();'
 check $M/usb_comms.c            'usb_desc_info_capture('
 check $M/usb_tonex_one.c        'boost_ctrl_on_volume_report();'
+check $M/usb_tonex_one.c        'tuner_ctrl_prepare_one_request(request, sizeof(request))'
+check $M/usb_tonex_one.c        'tuner_ctrl_on_one_frame(type, FramedBuffer, out_len);'
 check $M/usb_tonex_one_plus.c   'boost_ctrl_on_volume_report();'
 check $M/usb_tonex_plug.c       'boost_ctrl_on_volume_report();'
 check $M/usb_tonex.c            'boost_ctrl_on_volume_report();'
@@ -38,6 +40,19 @@ check $M/wifi_config.c          'wifi_fork_build_push('
 check $M/wifi_config.c          'void wifi_request_fork_push('
 check $M/wifi_config.c          'WIFI_FORK_URI_HANDLERS'
 check $M/web/index.html         'src="fork.js"'
+
+# 튜너는 원조 One 해석기가 아는 메시지 형식을 tuner_proto.c에 복제해 둔다(모르는 메시지만 튜너 응답 후보로 본다).
+# 업스트림이 형식을 더하면 그 메시지가 "모르는 메시지"로 진단에 쌓이므로 두 목록이 같은지 본다.
+case_list() {
+    awk -v start="$2" '$0 ~ start {f = 1} f && /case 0x[0-9A-Fa-f]+:/ {match($0, /0x[0-9A-Fa-f]+/); print substr($0, RSTART, RLENGTH)} f && /default:/ {exit}' "$1" |
+        while read -r value; do printf '%04X\n' "$value"; done | sort | tr '\n' ' '
+}
+upstream_types=$(case_list $M/usb_tonex_one.c '^static TonexStatus usb_tonex_one_parse\\(uint8_t\\* message, uint16_t inlength\\)$')
+fork_types=$(case_list $M/tuner_proto.c '^uint8_t tuner_is_known_one_type\\(uint16_t type\\)$')
+if [ -z "$upstream_types" ] || [ "$upstream_types" != "$fork_types" ]; then
+    echo "TYPES    usb_tonex_one_parse() knows [$upstream_types] but tuner_is_known_one_type() lists [$fork_types]"
+    missing=$((missing + 1))
+fi
 
 # 스킨 파티션은 업스트림(10M)보다 작다(OTA 슬롯 2개 때문에). 업스트림이 스킨을 키우거나 옮기면 여기서 걸린다.
 # 스킨 파일 경로는 업스트림 source/CMakeLists.txt의 WAVESHARE_43B 분기에서 읽는다.

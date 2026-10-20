@@ -19,11 +19,19 @@ limitations under the License.
 
 #include <stdint.h>
 
-// M-Vave Chocolate(CubeSuite "Program change A" 모드) 신호를 버튼 A~F로 판별하는 규칙.
-// 하드웨어 의존이 없는 판별·설정 규칙만 둔다(실행은 choc_exec.c).
+// M-Vave Chocolate 신호를 버튼 A~F로 판별하는 규칙. 하드웨어 의존이 없는 판별·설정 규칙만 둔다(실행은 choc_exec.c).
+// - "Program change A" 모드: 누를 때 PC만 온다(뗄 때 없음) → 누름 한 번(TAP)으로만 안다.
+// - "Manufacturer Control" 모드: A~D는 누를 때 CC 20~23 = 127, 뗄 때 0. E(A+B)·F(C+D)는 누를 때 CC 24/25,
+//   뗄 때는 마지막에 뗀 버튼의 CC 20~23 = 0이 온다(MOD 포럼 실측 기록) → 누름·뗌으로 길게 누름을 판별할 수 있다.
 
-#define CHOC_CONFIG_VERSION         1
+#define CHOC_CONFIG_VERSION         2
 #define CHOC_MAX_EVENTS             8
+
+#define CHOC_HOLD_NONE              0xFF
+#define CHOC_HOLD_TIME_MIN          30      // 10ms 단위
+#define CHOC_HOLD_TIME_MAX          200
+#define CHOC_HOLD_TIME_STEP         10
+#define CHOC_HOLD_TIME_DEFAULT      80
 
 enum ChocButtons
 {
@@ -52,6 +60,7 @@ enum ChocActions
     CHOC_ACTION_MOD_TOGGLE,
     CHOC_ACTION_COMP_TOGGLE,
     CHOC_ACTION_GATE_TOGGLE,
+    CHOC_ACTION_TUNER_TOGGLE,
     CHOC_ACTION_COUNT
 };
 
@@ -69,13 +78,24 @@ typedef struct __attribute__ ((packed))
     uint8_t Version;
     uint8_t TranslateEnable;
     tChocButtonConfig Buttons[CHOC_BUTTON_COUNT];
+    // Version 2
+    uint8_t TunerHoldButton;    // 이 버튼을 길게 누르면 튜너를 여닫는다, CHOC_HOLD_NONE이면 없음
+    uint8_t HoldTime;           // 길게 누름으로 보는 시간, 10ms 단위
 } tChocConfig;
+
+enum ChocEventKinds
+{
+    CHOC_EVENT_TAP,             // 누름만 알 수 있음(Program change 모드)
+    CHOC_EVENT_PRESS,
+    CHOC_EVENT_RELEASE
+};
 
 typedef struct
 {
-    uint8_t Claimed;            // 초콜릿 전용 신호(PC, CC2, CC3)가 있었음 → 기존 MIDI 처리로 넘기지 않는다
+    uint8_t Claimed;            // 초콜릿 전용 신호(PC, CC2·CC3, CC20~25)가 있었음 → 기존 MIDI 처리로 넘기지 않는다
     uint8_t Count;
     uint8_t Buttons[CHOC_MAX_EVENTS];
+    uint8_t Kinds[CHOC_MAX_EVENTS];
 } tChocDecodeResult;
 
 void choc_map_decode(const uint8_t* data, uint16_t length, tChocDecodeResult* result);

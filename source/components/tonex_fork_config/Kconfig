@@ -6,6 +6,15 @@ menu "Tonex Controller Fork Features"
         help
             Boost badge, action toast and the fork Setup screen, created at run time on the 800x480 UI.
 
+    config TONEX_FORK_TUNER
+        bool "Tuner for the original TONEX One"
+        depends on TONEX_FORK_UI_800X480
+        default y
+        help
+            Opens the upstream tuner screen on the original TONEX One. Tries pedal tuner messages
+            (One numbering of the ONE+ request) first, then measures pitch from the USB recording
+            stream if the pedal offers one at Full Speed. Diagnostics in Setup > Tuner and on the web.
+
     config TONEX_FORK_OTA_UPDATE
         bool "Firmware update over WiFi"
         default n

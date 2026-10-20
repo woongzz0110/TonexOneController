@@ -21,6 +21,7 @@ limitations under the License.
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "usb/usb_host.h"
 #include "control.h"
 #include "usb_comms.h"
@@ -30,6 +31,7 @@ limitations under the License.
 #include "boost.h"
 #include "boost_ctrl.h"
 #include "choc_map.h"
+#include "choc_hold.h"
 #include "choc_exec.h"
 #include "fork_settings.h"
 
@@ -39,6 +41,12 @@ static const char *TAG = "app_choc_exec";
 
 // BT 콜백 태스크가 쓰고 화면·웹 태스크가 읽는다(ChocLinkStates)
 static volatile uint8_t LinkState = CHOC_LINK_NONE;
+static volatile uint8_t InputMode = CHOC_INPUT_NONE;
+
+// BT 콜백 태스크와 esp_timer 태스크가 함께 쓴다
+static portMUX_TYPE HoldLock = portMUX_INITIALIZER_UNLOCKED;
+static tChocHold Hold = {0, CHOC_HOLD_NONE, 0};
+static esp_timer_handle_t HoldTimer = NULL;
 
 static void show_result(const char* text)
 {
@@ -171,12 +179,43 @@ static void run_action(const tChocButtonConfig* button_config)
         {
             toggle_effect(TONEX_PARAM_NOISE_GATE_ENABLE, "GATE");
         } break;
+
+        case CHOC_ACTION_TUNER_TOGGLE:
+        {
+#if CONFIG_TONEX_FORK_TUNER
+            UI_ToggleTuner();
+#else
+            show_result("NO TUNER");
+#endif
+        } break;
     }
 }
 
+static void notify_button(uint8_t button)
+{
+#if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
+    UI_NotifyChocButton(button);
+#endif
+    wifi_request_fork_push(WIFI_FORK_PUSH_CHOC_BUTTON, button);
+}
+
+// 동작의 파라미터 번호는 TONEX 계열 기준이라, 그 외 장치(Valeton 등)에 보내면 엉뚱한 값이 바뀐다
+static void run_button_action(const tChocConfig* config, uint8_t button)
+{
+    // 콘솔이 31250baud라 BT 콜백에서 INFO 로그를 찍으면 탭템포가 밀린다
+    ESP_LOGD(TAG, "button %s -> %s", choc_map_button_name(button), choc_map_action_name(config->Buttons[button].Action));
+
+    if (!boost_ctrl_is_supported())
+    {
+        show_result("NO TONEX");
+        return;
+    }
+
+    run_action(&config->Buttons[button]);
+}
+
 /****************************************************************************
-* NOTES:       BLE 경로와 웹 '실행' 버튼이 같이 쓴다.
-*              동작의 파라미터 번호는 TONEX 계열 기준이라, 그 외 장치(Valeton 등)에 보내면 엉뚱한 값이 바뀐다.
+* NOTES:       웹 '실행' 버튼: 길게 누름 규칙을 거치지 않고 짧게 누른 것처럼 실행한다
 *****************************************************************************/
 void choc_exec_run_button(uint8_t button)
 {
@@ -188,22 +227,94 @@ void choc_exec_run_button(uint8_t button)
     }
 
     fork_settings_get_choc(&config);
+    notify_button(button);
+    run_button_action(&config, button);
+}
 
-    // 콘솔이 31250baud라 BT 콜백에서 INFO 로그를 찍으면 탭템포가 밀린다
-    ESP_LOGD(TAG, "button %s -> %s", choc_map_button_name(button), choc_map_action_name(config.Buttons[button].Action));
-
-#if CONFIG_TONEX_CONTROLLER_HAS_DISPLAY
-    UI_NotifyChocButton(button);
-#endif
-    wifi_request_fork_push(WIFI_FORK_PUSH_CHOC_BUTTON, button);
-
-    if (!boost_ctrl_is_supported())
+static void apply_hold_result(const tChocConfig* config, const tChocHoldResult* result)
+{
+    if (result->notify != CHOC_HOLD_NONE)
     {
-        show_result("NO TONEX");
-        return;
+        notify_button(result->notify);
     }
 
-    run_action(&config.Buttons[button]);
+    if (HoldTimer != NULL)
+    {
+        if (result->cancel_timer || result->arm_timer)
+        {
+            esp_timer_stop(HoldTimer);
+        }
+
+        if (result->arm_timer)
+        {
+            esp_timer_start_once(HoldTimer, (uint64_t)config->HoldTime * 10 * 1000);
+        }
+    }
+
+    for (uint8_t loop = 0; loop < result->run_count; loop++)
+    {
+        run_button_action(config, result->run[loop]);
+    }
+
+    if (result->toggle_tuner)
+    {
+#if CONFIG_TONEX_FORK_TUNER
+        UI_ToggleTuner();
+#else
+        show_result("NO TUNER");
+#endif
+    }
+}
+
+// esp_timer 태스크
+static void hold_timer_cb(void* arg)
+{
+    tChocConfig config;
+    tChocHoldResult result;
+
+    (void)arg;
+
+    portENTER_CRITICAL(&HoldLock);
+    choc_hold_timer_expired(&Hold, &result);
+    portEXIT_CRITICAL(&HoldLock);
+
+    fork_settings_get_choc(&config);
+    apply_hold_result(&config, &result);
+}
+
+static void ensure_hold_timer(void)
+{
+    const esp_timer_create_args_t args = {
+        .callback = hold_timer_cb,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "choc_hold",
+        .skip_unhandled_events = true,
+    };
+
+    if ((HoldTimer == NULL) && (esp_timer_create(&args, &HoldTimer) != ESP_OK))
+    {
+        // 타이머가 없으면 길게 누름 버튼은 떼는 순간 원래 동작만 한다
+        HoldTimer = NULL;
+        ESP_LOGE(TAG, "hold timer create failed");
+    }
+}
+
+static void reset_hold(void)
+{
+    portENTER_CRITICAL(&HoldLock);
+    choc_hold_reset(&Hold);
+    portEXIT_CRITICAL(&HoldLock);
+
+    if (HoldTimer != NULL)
+    {
+        esp_timer_stop(HoldTimer);
+    }
+}
+
+uint8_t choc_exec_get_input_mode(void)
+{
+    return InputMode;
 }
 
 /****************************************************************************
@@ -232,14 +343,24 @@ uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)
 
     if (!result.Claimed)
     {
-        // PC·CC2·CC3이 없는 패킷(예: CubeSuite 커스텀 모드의 다른 CC)은 원래 처리로 보낸다.
+        // PC·CC2·CC3·CC20~25가 없는 패킷(예: CubeSuite 커스텀 모드의 다른 CC)은 원래 처리로 보낸다.
         // CC2·CC3은 값과 무관하게 여기서 소비된다(choc_map.c).
         return 0;
     }
 
+    ensure_hold_timer();
+
     for (uint8_t loop = 0; loop < result.Count; loop++)
     {
-        choc_exec_run_button(result.Buttons[loop]);
+        tChocHoldResult hold_result;
+
+        InputMode = (result.Kinds[loop] == CHOC_EVENT_TAP) ? CHOC_INPUT_TAP : CHOC_INPUT_PRESS_RELEASE;
+
+        portENTER_CRITICAL(&HoldLock);
+        choc_hold_event(&Hold, &config, result.Kinds[loop], result.Buttons[loop], &hold_result);
+        portEXIT_CRITICAL(&HoldLock);
+
+        apply_hold_result(&config, &hold_result);
     }
 
     return 1;
@@ -278,6 +399,9 @@ void choc_exec_on_ble_opened(void)
 
 void choc_exec_on_ble_disconnected(void)
 {
+    // 누른 채 끊기면 뗌이 오지 않는다. 다시 연결되면 CubeSuite 모드가 바뀌었을 수 있다
+    reset_hold();
+    InputMode = CHOC_INPUT_NONE;
     set_link_state(CHOC_LINK_NONE);
 }
 

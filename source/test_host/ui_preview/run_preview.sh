@@ -41,7 +41,7 @@ fi
 echo "building preview..."
 $CC $CFLAGS -o "$OBJ/preview" \
     "$HERE/preview_main.c" "$HERE/stubs.c" "$OBJ/actions_stub_full.c" \
-    "$SOURCE/main"/display_fork*.c "$SOURCE/main/usb_desc_info.c" "$SOURCE/main/boost.c" "$SOURCE/main/choc_map.c" \
+    "$SOURCE/main"/display_fork*.c "$SOURCE/main/usb_desc_info.c" "$SOURCE/main/boost.c" "$SOURCE/main/choc_map.c" "$SOURCE/main/tuner_proto.c" \
     "$UI"/*.c "$OBJ/liblvgl.a" -lz -lm
 
 "$OBJ/preview" "$OUT"

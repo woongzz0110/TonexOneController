@@ -29,12 +29,14 @@ limitations under the License.
 #define NVS_NAMESPACE               "storage"
 #define NVS_KEY_BOOST               "boostconf"
 #define NVS_KEY_CHOC                "chocconf"
+#define NVS_KEY_TUNER               "tunerconf"
 
 #define SAVE_DELAY_MSEC             1000
 #define SAVE_TASK_STACK_SIZE        (4 * 1024)
 #define SAVE_TASK_PRIORITY          (tskIDLE_PRIORITY + 1)
 #define SAVE_BOOST                  0x01
 #define SAVE_CHOC                   0x02
+#define SAVE_TUNER                  0x04
 
 static const char *TAG = "app_fork_settings";
 
@@ -42,6 +44,7 @@ static const char *TAG = "app_fork_settings";
 static portMUX_TYPE SettingsLock = portMUX_INITIALIZER_UNLOCKED;
 static tBoostConfig BoostConfig;
 static tChocConfig ChocConfig;
+static tTunerConfig TunerConfig;
 static TaskHandle_t SaveTask = NULL;
 
 // 저장된 blob이 짧으면(예전 레이아웃) 앞부분만 채워지고 나머지는 호출자가 넣은 기본값으로 남는다.
@@ -152,6 +155,13 @@ static void save_task(void* arg)
             save_item(&choc, sizeof(choc), NVS_KEY_CHOC);
         }
 
+        if (pending & SAVE_TUNER)
+        {
+            tTunerConfig tuner;
+            fork_settings_get_tuner(&tuner);
+            save_item(&tuner, sizeof(tuner), NVS_KEY_TUNER);
+        }
+
         pending = 0;
     }
 }
@@ -185,6 +195,7 @@ void fork_settings_load(void)
 {
     tBoostConfig boost;
     tChocConfig choc;
+    tTunerConfig tuner;
     uint8_t newer;
     esp_err_t err;
 
@@ -225,9 +236,26 @@ void fork_settings_load(void)
         save_item(&choc, sizeof(choc), NVS_KEY_CHOC);
     }
 
+    tuner_config_set_default(&tuner);
+    err = load_item(&tuner, sizeof(tuner), NVS_KEY_TUNER, &newer);
+
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        save_item(&tuner, sizeof(tuner), NVS_KEY_TUNER);
+    }
+    else if (err != ESP_OK)
+    {
+        tuner_config_set_default(&tuner);
+    }
+    else if (tuner_config_sanitize(&tuner) && !newer)
+    {
+        save_item(&tuner, sizeof(tuner), NVS_KEY_TUNER);
+    }
+
     portENTER_CRITICAL(&SettingsLock);
     memcpy((void*)&BoostConfig, (void*)&boost, sizeof(boost));
     memcpy((void*)&ChocConfig, (void*)&choc, sizeof(choc));
+    memcpy((void*)&TunerConfig, (void*)&tuner, sizeof(tuner));
     portEXIT_CRITICAL(&SettingsLock);
 
     if ((SaveTask == NULL) && (xTaskCreate(save_task, "ForkSave", SAVE_TASK_STACK_SIZE, NULL, SAVE_TASK_PRIORITY, &SaveTask) != pdPASS))
@@ -333,4 +361,41 @@ uint8_t fork_settings_set_all(const tBoostConfig* boost_config, const tChocConfi
     notify_changed(1);
 
     return BOOST_CONFIG_OK;
+}
+
+void fork_settings_get_tuner(tTunerConfig* config)
+{
+    portENTER_CRITICAL(&SettingsLock);
+    memcpy((void*)config, (void*)&TunerConfig, sizeof(tTunerConfig));
+    portEXIT_CRITICAL(&SettingsLock);
+}
+
+void fork_settings_set_tuner(const tTunerConfig* config)
+{
+    tTunerConfig tuner;
+
+    memcpy((void*)&tuner, (void*)config, sizeof(tTunerConfig));
+    tuner_config_sanitize(&tuner);
+
+    portENTER_CRITICAL(&SettingsLock);
+    memcpy((void*)&TunerConfig, (void*)&tuner, sizeof(tuner));
+    portEXIT_CRITICAL(&SettingsLock);
+
+    request_save(SAVE_TUNER);
+}
+
+void fork_settings_set_tuner_candidate(uint8_t candidate)
+{
+    uint8_t changed;
+
+    portENTER_CRITICAL(&SettingsLock);
+    changed = (TunerConfig.PedalCandidate != candidate);
+    TunerConfig.PedalCandidate = candidate;
+    tuner_config_sanitize(&TunerConfig);
+    portEXIT_CRITICAL(&SettingsLock);
+
+    if (changed)
+    {
+        request_save(SAVE_TUNER);
+    }
 }

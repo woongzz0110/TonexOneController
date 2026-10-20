@@ -37,6 +37,7 @@ IDF_PRESET=WS43B idf.py build
 | `main/usb_comms.c` | 장치 오픈 뒤 `usb_desc_info_capture()` | Setup > Info 디스크립터 요약 | 설정 디스크립터를 얻은 직후로 |
 | `main/usb_comms.c` | 장치 제거 시 `boost_ctrl_on_usb_disconnected()` | 부스트 상태 초기화 | `control_set_usb_status(0)` 옆으로 |
 | `main/usb_tonex_one.c`, `usb_tonex_one_plus.c`, `usb_tonex_plug.c`, `usb_tonex.c` | 글로벌 볼륨 저장 뒤 `boost_ctrl_on_volume_report()` | 배지·웹 갱신 | `TONEX_GLOBAL_MASTER_VOLUME` 값을 쓰는 곳 뒤로 |
+| `main/usb_tonex_one.c` | `usb_tonex_one_request_tuner()`의 `request[13] = state;` 뒤 `tuner_ctrl_prepare_one_request()`, `usb_tonex_one_parse()`의 형식 읽기 직후 `tuner_ctrl_on_one_frame()` | 원조 One 튜너 요청 번호 후보·응답·모르는 메시지 기록 | 요청 배열이 14바이트(`b9 03 81 형식 82 길이 80 셋째 b9 01 상태`)가 아니게 바뀌면 포크는 요청을 보내지 않는다(튜너 보고서 `layout changed`). 해석 함수에서 `type`을 읽는 줄 바로 뒤로 |
 | `main/midi_control.c` | 스캔 매칭 `choc_exec_on_ble_connecting()`, 열기 성공 `choc_exec_on_ble_opened()`, 열기 실패·연결 끊김 `choc_exec_on_ble_disconnected()` | 초콜릿 연결 추적(연결 중/연결됨 표시) | 연결 대상 이름을 아는 지점, `ESP_GATTC_OPEN_EVT` 성공·실패 지점으로 |
 | `main/midi_control.c` | `ESP_GATTC_NOTIFY_EVT`에서 `choc_exec_handle_ble_midi()` 실패 시에만 `midi_helper_process_incoming_data()` | 초콜릿 번역 | 업스트림 수신 호출을 감싸는 형태를 유지 |
 | `main/display.c` | `UI_ELEMENT_FORK`, `UI_PostForkUpdate()`, 분기, 파라미터 갱신 뒤 `display_fork_on_parameters_refreshed()`, `display_init()`의 `display_fork_init()` | 배지·알림·Setup 화면 | `ui_init()` 뒤에 `display_fork_init()`이 와야 함 |
@@ -53,6 +54,8 @@ IDF_PRESET=WS43B idf.py build
   업스트림 생성 UI와 `display_fork*.c`를 맥에서 그대로 실행해 메인 화면과 Setup 화면 탭들을 PNG로 남긴다(스킨 그림은 빈 채로 나온다).
   미리보기만 빌드가 실패하면 대개 업스트림 헤더가 새 ESP 헤더를 끌어온 것이므로 `ui_preview/stubs/`에 빈 헤더를 더한다(펌웨어 문제가 아니다).
   `objects.ui_touch_gesture_container`, `objects.screen1`, `img_tick` 이름이 바뀌면 빌드가 실패하므로 바로 드러난다.
+  튜너는 `objects.tuner`, `objects.ui_tuner_button`, `action_tuner_pressed()`/`action_tuner_close()`(`actions.h`)에 기대고, 튜너 화면 출처 표시는
+  원형 게이지 오른쪽(x 592, y 150) 빈 곳에 둔다. 튜너 화면 배치가 바뀌면 미리보기 20~22·27번으로 확인한다.
   상단 상태 아이콘 자리(Setup 화면을 여는 곳, `display_fork.c` `SETUP_ZONE_*`)는 좌표로 잡으므로 아이콘이 옮겨지면 미리보기 06번으로 확인한다.
 - **업스트림 웹 Config(BT·Midi·Misc·WiFi) 변경**: 보드 Setup 화면의 같은 탭은 `display_fork_config.c` 표가 업스트림 `CONFIG_ITEM_*`과
   웹 `<option value>` 순서를 그대로 쓴다. 업스트림이 항목을 추가·삭제하거나 선택지 순서를 바꾸면 이 표도 맞춘다(항목 이름이 바뀌면 빌드가 실패한다).
@@ -67,4 +70,14 @@ IDF_PRESET=WS43B idf.py build
 - **저장소 루트 `index.html`**: 업스트림 바이너리와 업스트림 파티션 표 기준의 업스트림 크롬 설치 페이지다. 고치지 않고 그대로 받는다.
   포크 GitHub Pages는 이 파일이 아니라 Actions가 `tools/web_installer/`로 만든 사이트를 올린다.
 - **ESP-IDF 버전**: 업스트림 `ci.yaml`의 `esp_idf_version`이 바뀌면 `fork-ws43b.yaml`과 로컬 환경도 같이 올린다.
+- **업스트림 튜너 코드**: 포크는 업스트림이 튜너 화면을 열 때 보내는 요청(`control_request_tuner` → `usb_request_tuner` → `usb_tonex_one_request_tuner`)과
+  `UI_SetTunerFrequencies(센트, 기준 주파수, MIDI 음 번호 / 0x80 = 음 없음)`의 뜻에 기댄다(화면 큐가 3개 넘게 차 있으면 값을 버린다).
+  포크는 `usb_request_tuner()`의 상태 바이트에 후보를 실어(`0x80 | 후보 << 1 | 상태`) 보내고, `usb_tonex_one_request_tuner()`가 그 바이트를 요청 끝(`request[13]`)에 그대로 넣는다는 것에 기댄다.
+  업스트림 입력 큐는 다음 메시지가 프리셋 변경이거나 같은 번호의 파라미터 변경이면 앞 메시지를 버린다. 포크는 버려진 요청을 시간 초과로 알아차린다(재전송 1회 → 중단).
+  상태 바이트(0x80 이상)가 파라미터 번호와 겹치지 않아야 해서, `TONEX_GLOBAL_LAST`가 0x80을 넘으면 `tuner_ctrl.c`의 `_Static_assert`가 빌드를 멈춘다.
+  포크는 업스트림이 원조 One의 첫 상태 메시지(0x0306)를 받은 뒤에만 입력 큐를 처리한다(READY)는 것에 기대어, 그 전에는 요청을 만들지 않는다.
+  전송 실패(`tonex_common_transmit` 시간 초과)는 알 수 없어 보낸 것으로 본다(업스트림 다른 명령도 다시 보내지 않는다).
+  입력 큐는 장치를 바꿔 꽂아도 비우지 않는다. 원조 One이 동기화 중일 때 쌓인 포크 요청이 남은 채 ONE+·Plug로 바꾸면 그 장치에 0x8X 상태로 나갈 수 있다(업스트림 메시지도 같은 성질).
+  One의 수신 형식 목록(`usb_tonex_one_parse()`의 `case`)이 늘면 `tuner_proto.c`의 `tuner_is_known_one_type()`에도 넣는다.
+  `tools/check_fork_hooks.sh`가 두 목록을 비교한다(넣지 않으면 그 메시지가 "모르는 메시지"로 진단에 쌓인다).
 - **업스트림이 같은 기능을 추가**(예: 원조 One 튜너, 볼륨 표시): 포크 기능을 걷어낼지 비교한다.
