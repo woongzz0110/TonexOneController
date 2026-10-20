@@ -130,12 +130,14 @@ static void test_boost(void)
     bad = b; bad.OffDb10 = -400; bad.OnDb10 = -395; CHECK(boost_config_check(&bad) == BOOST_CONFIG_OK, "min gap ok");
 }
 
-// Manufacturer Control 모드: A~D = CC 20~23 (127 누름 / 0 뗌), E = CC 24, F = CC 25
+// Manufacturer Control 모드: A~D = CC 20~23 (127 누름 / 0 뗌), E = CC 24, F = CC 25 (누를 때 값 0, 실물 확인)
 static void test_decode_press_release(void)
 {
     const uint8_t press_a[] = {0x80, 0x80, 0xB0, 20, 127};
     const uint8_t release_d[] = {0x80, 0x80, 0xB0, 23, 0};
-    const uint8_t press_f[] = {0x80, 0x80, 0xB0, 25, 127};
+    const uint8_t press_e[] = {0x80, 0x80, 0xB0, 24, 0};
+    const uint8_t press_f[] = {0x80, 0x80, 0xB0, 25, 0};
+    const uint8_t press_f_127[] = {0x80, 0x80, 0xB0, 25, 127};
     const uint8_t unrelated[] = {0x80, 0x80, 0xB0, 26, 127};
     tChocDecodeResult r;
 
@@ -143,8 +145,12 @@ static void test_decode_press_release(void)
     CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_A) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press A");
     choc_map_decode(release_d, sizeof(release_d), &r);
     CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_D) && (r.Kinds[0] == CHOC_EVENT_RELEASE), "release D");
+    choc_map_decode(press_e, sizeof(press_e), &r);
+    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_E) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press E sends value 0");
     choc_map_decode(press_f, sizeof(press_f), &r);
-    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_F) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press F");
+    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_F) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press F sends value 0");
+    choc_map_decode(press_f_127, sizeof(press_f_127), &r);
+    CHECK(r.Claimed && (r.Count == 1) && (r.Buttons[0] == CHOC_BUTTON_F) && (r.Kinds[0] == CHOC_EVENT_PRESS), "press F with 127 too");
     choc_map_decode(unrelated, sizeof(unrelated), &r);
     CHECK(!r.Claimed && (r.Count == 0), "CC 26 is not chocolate");
 

@@ -116,7 +116,7 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
   - CC2·CC3은 값이 5가 아니어도 소비한다(뒤로 넘기면 CC2가 딜레이 On/Off로 해석됨).
   - 같은 패킷에 동시 누르기(E/F)와 PC가 함께 오면 PC는 버린다.
   - PC·CC2·CC3이 하나도 없는 패킷(예: CubeSuite 커스텀 모드의 CC122)은 기존 MIDI 처리로 그대로 보낸다. 지금 쓰는 커스텀 모드도 번역을 켠 채로 계속 동작한다.
-  - **Manufacturer Control 모드**도 받는다(MOD 포럼 실측 기록): A~D = CC 20~23(누름 127, 뗌 0), E = CC 24, F = CC 25.
+  - **Manufacturer Control 모드**도 받는다(MOD 포럼 실측 기록): A~D = CC 20~23(누름 127, 뗌 0), E = CC 24, F = CC 25(누를 때 값 0. 값으로 누름·뗌을 가리면 안 된다, 실물 확인).
     E·F를 뗄 때는 마지막에 뗀 버튼의 CC 20~23 = 0이 온다. 이 CC 20~25도 번역이 켜져 있으면 소비한다.
     CubeSuite CC 모드의 "Visual Behavior"(누를 때마다 127/0 번갈아)는 누름·뗌으로 잘못 읽히므로 쓰지 않는다.
 - **길게 눌러 튜너**(`choc_hold.c`, 순수): Program change 모드는 뗄 때 신호가 없어서 길게 누름을 알 수 없다 → Manufacturer Control 모드에서만 된다.

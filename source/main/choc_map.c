@@ -28,7 +28,7 @@ limitations under the License.
 #define CHOC_COMBO_CC_CD            3
 #define CHOC_COMBO_VALUE            5
 
-// Manufacturer Control 모드: A~D = CC 20~23, E = 24, F = 25
+// Manufacturer Control 모드: A~D = CC 20~23(누름 127, 뗌 0), E = 24, F = 25(누를 때 값 0, 뗌은 A~D 번호의 0으로 온다)
 #define CHOC_MFR_CC_FIRST           20
 #define CHOC_MFR_CC_LAST            25
 
@@ -106,9 +106,11 @@ static void handle_message(uint8_t status, uint8_t data_1, uint8_t data_2, tChoc
             }
             else if ((data_1 >= CHOC_MFR_CC_FIRST) && (data_1 <= CHOC_MFR_CC_LAST))
             {
-                // E·F를 뗄 때 오는 값 0도 A~D 번호로 온다: 어느 쪽인지는 눌림 상태를 아는 choc_hold.c가 가른다
+                uint8_t button = CHOC_BUTTON_A + (data_1 - CHOC_MFR_CC_FIRST);
+
+                // E·F는 값이 0이어도 누름이다. E·F를 뗄 때 오는 값 0은 A~D 번호로 온다: 어느 쪽인지는 눌림 상태를 아는 choc_hold.c가 가른다
                 result->Claimed = 1;
-                add_button(result, CHOC_BUTTON_A + (data_1 - CHOC_MFR_CC_FIRST), (data_2 > 0) ? CHOC_EVENT_PRESS : CHOC_EVENT_RELEASE);
+                add_button(result, button, ((button >= CHOC_BUTTON_E) || (data_2 > 0)) ? CHOC_EVENT_PRESS : CHOC_EVENT_RELEASE);
             }
         } break;
 
