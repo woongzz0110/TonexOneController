@@ -99,7 +99,7 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
   동기화 직후 요청한 전역 설정 응답보다 OFF 전송이 먼저 처리되면 빈 전역 설정을 보낼 수 있다(실물 항목). 고치려면 첫 전역 설정 수신 뒤로 미뤄야 하는데,
   그 수신 지점은 파라미터 락을 쥔 USB 파싱 경로라 거기서 전송하면 교착 위험이 생겨 지원 범위 밖 장비를 위해 넣지 않았다.
 - 빅 TONEX(`AMP_MODELLER_TONEX`)는 볼륨을 보낸 뒤 되읽지 않으므로, `boost_ctrl_set()`이 보낸 값을 보드가 아는 볼륨에 바로 반영한다(One 계열은 페달이 다시 알려준 값을 쓴다).
-- 변경 파일: `boost.c/.h`, `boost_ctrl.c/.h`, `fork_settings.c/.h`(새 파일), 연결: `control.c`(2곳), `usb_comms.c`(끊김), `usb_tonex_one.c`·`usb_tonex_one_plus.c`·`usb_tonex_plug.c`·`usb_tonex.c`(볼륨 수신).
+- 변경 파일: `boost.c/.h`, `boost_ctrl.c/.h`, `fork_settings.c/.h`(새 파일), 연결: `control.c`(설정 로드·동기화 완료), `usb_comms.c`(끊김), `usb_tonex_one.c`·`usb_tonex_one_plus.c`·`usb_tonex_plug.c`·`usb_tonex.c`(볼륨 수신).
 
 ### 3-2. 초콜릿 번역 계층 + 웹 (계획서 2, 2-1)
 
@@ -125,7 +125,8 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
   `GETFORKCONFIG`에는 초콜릿 연결 상태 `CHOC_STATE`(0 없음, 1 연결 중 = 스캔에서 이름을 찾아 여는 중, 2 연결됨 = 열기 성공)와
   업스트림 Bluetooth 설정 `BT_CHOC_EN`·`BT_MODE`도 실어 연결 안내에 쓴다. 번역은 연결 중부터 켠다(notify는 연결된 뒤에만 온다).
 - 웹 저장 결과는 보낸 순서대로 받아 그 페이지에만 붙이고, 성공하면 설정을 한 번 더 받아 "보드에서 바뀌었다" 판단 기준을 맞춘다.
-- 변경 파일: `choc_map.c/.h`, `choc_exec.c/.h`, `wifi_fork.c/.h`, `web/fork.js`(새 파일), 연결: `midi_control.c`(4곳), `wifi_config.c`(5곳), `web/index.html`(1줄).
+- 변경 파일: `choc_map.c/.h`, `choc_exec.c/.h`, `wifi_fork.c/.h`, `web/fork.js`(새 파일), 연결: `midi_control.c`(연결 추적·수신), `wifi_config.c`(명령·푸시·핸들러 등록), `web/index.html`(스크립트 1줄).
+  연결 지점 전체 목록은 `docs/UPSTREAM_SYNC.md`, 빠짐 확인은 `tools/check_fork_hooks.sh`.
 
 ### 3-3. 메인 화면 표시 (계획서 3)
 
@@ -136,7 +137,7 @@ TONEX 볼륨 수신(usb_tonex*.c) → boost_ctrl_on_volume_report() → 배지 �
 - **계획서와 다른 점**: EEZ 프로젝트에 객체를 추가하지 않고 `display_fork.c`가 실행 중에 LVGL 객체를 만든다.
   EEZ Studio 없이 작업할 수 있고, 업스트림이 EEZ 프로젝트를 다시 생성해도 충돌이 없다. 생성 코드는 고치지 않는다.
   보드 폰트(Montserrat)에 한글 글리프가 없어 보드 문구는 영어다.
-- 변경 파일: `display_fork*.c/.h`(새 파일), 연결: `display.c`(6곳: 헤더, 요소 enum, 큐 전달 `UI_PostForkUpdate()`, 분기, 파라미터 갱신, 초기화).
+- 변경 파일: `display_fork*.c/.h`(새 파일), 연결: `display.c`(헤더, 요소 enum, 큐 전달 `UI_PostForkUpdate()`, 분기, 파라미터 갱신, 초기화).
 
 ### 3-4. 보드 Setup 화면 (계획서 4-2)
 
