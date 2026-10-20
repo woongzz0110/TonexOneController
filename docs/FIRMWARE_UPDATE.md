@@ -4,23 +4,51 @@
 
 | 상황 | 방법 | 필요한 파일 |
 | --- | --- | --- |
-| 포크 펌웨어 첫 설치 (업스트림 펌웨어에서 넘어올 때) | USB | 설치 묶음 전체 (파티션 표가 바뀜) |
+| 포크 펌웨어 첫 설치 (업스트림 펌웨어에서 넘어올 때) | USB (크롬 설치 페이지) | 설치 묶음 전체 (파티션 표가 바뀜) |
 | 그 뒤 업데이트 | Wi-Fi (웹 Config > Firmware) | `TonexController.bin` 하나 |
-| 스킨 이미지가 바뀐 업스트림 버전을 받았을 때 | USB | 설치 묶음 전체 |
-| Wi-Fi 업데이트가 안 될 때, 복구 | USB | 설치 묶음 전체 |
+| 스킨 이미지가 바뀐 업스트림 버전을 받았을 때 | USB (크롬 설치 페이지) | 설치 묶음 전체 |
+| Wi-Fi 업데이트가 안 될 때, 복구 | USB (크롬 설치 페이지) | 설치 묶음 전체 |
+
+크롬 설치 페이지: https://woongzz0110.github.io/TonexOneController/ (main에서 마지막으로 성공한 빌드. 설치 묶음 전체를 페이지가 알아서 쓴다)
 
 ## 파일 받기
 
-둘 중 하나.
+크롬 설치 페이지로 USB 설치할 때는 받을 파일이 없다. Wi-Fi 업데이트용 `TonexController.bin`이나 파이썬 도구용 설치 묶음은 아래 중 하나에서 받는다.
 
+- 크롬 설치 페이지의 `TonexController.bin 받기` (main에서 마지막으로 성공한 빌드)
 - 맥에서 빌드: `cd source && IDF_PRESET=WS43B_FORK idf.py build` → `source/build/fork_ws43b/`
   - Wi-Fi용: `source/build/fork_ws43b/TonexController.bin`
 - GitHub Actions(맥 없이 폰으로 가능): 포크 저장소 Actions 탭에서 "Fork WS43B build" 실행 결과의 산출물
   - `ws43b-fork-wifi-update` = `TonexController.bin`
   - `ws43b-fork-usb-install` = USB 설치 묶음(부트로더·파티션 표·otadata·앱·스킨·`flasher_args.json`·설치 도구)
   - 포크 저장소는 Actions가 기본으로 꺼져 있다. 처음 한 번 Actions 탭에서 켜야 한다. 이때 업스트림 워크플로 "ESP-IDF Build"(24개 플랫폼 빌드)도 같이 켜지므로, 필요 없으면 그 워크플로만 Disable 한다.
+  - 같은 워크플로가 main 빌드일 때만 크롬 설치 페이지를 GitHub Pages에 올린다. 처음 한 번 Settings > Pages의 Source를 **GitHub Actions**로 바꿔야 한다.
+    이때 생기는 `github-pages` 환경은 기본 브랜치(main)에서만 배포를 허용하므로 기능 브랜치 빌드는 페이지에 올라가지 않는다.
 
 ## USB 설치 (첫 설치·복구)
+
+### 크롬 설치 페이지
+
+데스크톱 크롬·엣지에서 https://woongzz0110.github.io/TonexOneController/ 를 연다. 페이지 맨 위 "펌웨어 버전"이 설치될 빌드다(보드 Setup 화면 Info 탭의 버전과 비교).
+
+1. TONEX One에서 USB 케이블을 빼고, 보드 **Boot 버튼을 누른 채** 컴퓨터에 USB-C로 연결한 뒤 버튼을 뗀다.
+2. "USB로 설치" → 포트(보통 `USB JTAG/serial debug unit`) 선택 → `Install Tonex Controller fork` → `Erase device` 체크 여부 → `Next` → `Install`.
+   - **`Erase device`를 체크하면 플래시 전체를 지운다.** 보드 설정(BT·Wi-Fi·프리셋 순서 등 업스트림 설정과 포크 부스트·초콜릿 설정)이 모두 기본값으로 돌아간다.
+     설정을 유지하려면 체크하지 않는다. 업스트림 펌웨어에서 처음 넘어올 때도 체크하지 않아도 된다(NVS 위치가 같다).
+   - 체크하지 않으면 부트로더·파티션 표·otadata·앱·스킨만 쓴다(파이썬 도구 기본 동작과 같다). 쓰는 주소는 빌드의 `flasher_args.json`에서 가져온다.
+3. USB를 빼고 9V 전원으로 켠다. 컴퓨터 USB 전원만으로는 화면이 깨진다.
+
+기능 브랜치 빌드나 맥에서 빌드한 펌웨어를 같은 방식으로 올리려면 페이지를 로컬에 띄운다(Web Serial은 localhost에서도 된다).
+CI 설치 묶음을 푼 폴더도 빌드 폴더 대신 쓸 수 있다.
+
+```bash
+python3 tools/web_installer/build_site.py source/build/fork_ws43b /tmp/tonex_site
+python3 -m http.server -d /tmp/tonex_site 8000    # 크롬으로 http://localhost:8000
+```
+
+### 파이썬 도구 (대안)
+
+크롬을 쓸 수 없을 때, 또는 스킨을 건너뛰는 등 일부만 쓰고 싶을 때.
 
 1. TONEX One에서 USB 케이블을 빼고, 보드 **Boot 버튼을 누른 채** 맥에 USB-C로 연결한 뒤 버튼을 뗀다.
 2. 포트 확인: `ls /dev/cu.usbmodem*`
@@ -35,7 +63,7 @@
    - 같은 파티션 표로 다시 설치할 때는 `--no-skins`로 스킨(약 5.9MB) 쓰기를 건너뛸 수 있다. 도구가 보드의 파티션 표를 먼저 읽어 이 빌드와 다르면(업스트림에서 처음 넘어올 때) 거부한다.
 4. USB를 빼고 9V 전원으로 켠다. 맥 USB 전원만으로는 화면이 깨진다.
 
-도구는 항상 otadata도 함께 써서 `ota_0`으로 부팅하게 만든다. Wi-Fi 업데이트를 한 번 하면 부트로더가 `ota_1`을 부팅하므로, 앱 이미지만 `0x10000`에 다시 써서는 반영되지 않는다.
+두 방법 모두 otadata를 함께 써서 `ota_0`으로 부팅하게 만든다. Wi-Fi 업데이트를 한 번 하면 부트로더가 `ota_1`을 부팅하므로, 앱 이미지만 `0x10000`에 다시 써서는 반영되지 않는다.
 
 ## Wi-Fi 업데이트
 

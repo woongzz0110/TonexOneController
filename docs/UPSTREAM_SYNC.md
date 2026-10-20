@@ -22,7 +22,8 @@ IDF_PRESET=WS43B_FORK idf.py build
 IDF_PRESET=WS43B idf.py build
 ```
 
-통과하면 `git push origin main`. 보드에는 Wi-Fi 업데이트로 올린다(`docs/FIRMWARE_UPDATE.md`). 업스트림이 스킨 이미지를 바꿨으면 USB 설치가 필요하다.
+통과하면 `git push origin main`. main 푸시로 Actions가 크롬 설치 페이지(GitHub Pages)도 새 빌드로 갱신한다.
+보드에는 Wi-Fi 업데이트로 올린다(`docs/FIRMWARE_UPDATE.md`). 업스트림이 스킨 이미지를 바꿨으면 USB 설치가 필요하다.
 
 ## 연결 지점
 
@@ -42,7 +43,7 @@ IDF_PRESET=WS43B idf.py build
 | `main/wifi_config.c` | `EVENT_SYNC_FORK`·`wifi_request_fork_push()`, 명령 분기 끝 `else` → `wifi_fork_handle_ws_command()`, `http_server_init()`의 핸들러 수·스택 증가와 `wifi_fork_register_handlers()` | 웹 명령·푸시·`/fork.js`·`/update` | 핸들러 등록은 와일드카드 `/*`보다 먼저 |
 | `main/web/index.html` | `<script src="fork.js" defer>` | 웹 페이지 | `script.js` 뒤에 둔다 |
 
-업스트림 파일이 아닌 것(포크 전용, 충돌 없음): `CLAUDE.md`, `docs/*`, `tools/*`, `.github/workflows/fork-ws43b.yaml`, `source/CMakeUserPresets.json`,
+업스트림 파일이 아닌 것(포크 전용, 충돌 없음): `CLAUDE.md`, `docs/*`, `tools/*`(크롬 설치 페이지 `tools/web_installer/` 포함), `.github/workflows/fork-ws43b.yaml`, `source/CMakeUserPresets.json`,
 `source/sdkconfig.fork.ws43B`, `source/partitions_16MB_ota.csv`, `source/components/tonex_fork_config/`, `source/test_host/`, `source/main/fork.cmake`, 2장의 포크 소스 파일.
 
 ## 업스트림 변경 유형별 확인
@@ -61,6 +62,9 @@ IDF_PRESET=WS43B idf.py build
   업스트림이 연결 중에도 이 요청을 보내게 바뀌면 빌드·메뉴는 멀쩡한데 저장 결과가 버려지므로, `script.js`의 `GETMODELLERDATA` 요청 지점을 확인한다.
 - **설정 구조체·NVS** (`control.c`): 포크 설정은 별도 키라 영향이 없다. 업스트림이 `boostconf`/`chocconf`라는 키를 새로 쓰면 이름을 바꾼다.
 - **파티션** (`partitions_16MB.csv`): 업스트림이 이 파일을 바꾸면 `partitions_16MB_ota.csv`에 같은 변경(특히 NVS·스킨 크기)을 반영한다. 스킨 이미지가 커지면 스킨 파티션(0x690000)이 충분한지 본다.
+  크롬 설치 페이지와 파이썬 도구는 쓰기 주소를 빌드의 `flasher_args.json`에서 읽으므로 따로 고칠 곳이 없다.
 - **`sdkconfig.ws43B`**: `WS43B_FORK`는 이 파일 위에 `sdkconfig.fork.ws43B`를 얹으므로 업스트림 변경을 자동으로 따른다. 파티션 관련 키가 추가되면 덮어쓰는지 확인한다.
+- **저장소 루트 `index.html`**: 업스트림 바이너리와 업스트림 파티션 표 기준의 업스트림 크롬 설치 페이지다. 고치지 않고 그대로 받는다.
+  포크 GitHub Pages는 이 파일이 아니라 Actions가 `tools/web_installer/`로 만든 사이트를 올린다.
 - **ESP-IDF 버전**: 업스트림 `ci.yaml`의 `esp_idf_version`이 바뀌면 `fork-ws43b.yaml`과 로컬 환경도 같이 올린다.
 - **업스트림이 같은 기능을 추가**(예: 원조 One 튜너, 볼륨 표시): 포크 기능을 걷어낼지 비교한다.

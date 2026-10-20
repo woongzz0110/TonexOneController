@@ -15,12 +15,14 @@ Builty/TonexOneController 포크. 원조 TONEX One(ONE+ 아님) + Waveshare ESP3
 cd source
 IDF_PRESET=WS43B_FORK idf.py build     # 결과: source/build/fork_ws43b/
 IDF_PRESET=WS43B idf.py build          # 업스트림 프리셋 확인용: source/build_ws43b/
-python3 ../tools/flash_fork_ws43b.py /dev/cu.usbmodemXXXX   # USB 설치 (보드 Boot 버튼을 누른 채 연결)
+python3 ../tools/flash_fork_ws43b.py /dev/cu.usbmodemXXXX   # USB 설치 파이썬 도구 (보드 Boot 버튼을 누른 채 연결)
+python3 ../tools/web_installer/build_site.py build/fork_ws43b /tmp/tonex_site   # 크롬 설치 페이지를 로컬로 (python3 -m http.server -d /tmp/tonex_site 8000)
 ./test_host/run_tests.sh               # 하드웨어 없이 도는 규칙 테스트
 ./test_host/ui_preview/run_preview.sh [출력 폴더]   # 4.3B 화면(메인 화면 배지·알림, Setup 화면 탭)을 PNG로 (WS43B_FORK 빌드 뒤)
 ```
 
-- 펌웨어 업데이트 방법(USB 첫 설치, 이후 Wi-Fi): `docs/FIRMWARE_UPDATE.md`
+- 펌웨어 업데이트 방법(USB 첫 설치, 이후 Wi-Fi): `docs/FIRMWARE_UPDATE.md`. USB 설치는 크롬 설치 페이지(https://woongzz0110.github.io/TonexOneController/)가 우선이고,
+  이 페이지는 main 푸시 때 `fork-ws43b.yaml`이 `tools/web_installer/`로 만들어 GitHub Pages에 올린다(루트 `index.html`은 업스트림 설치 페이지라 고치지 않는다).
 - 맥 USB 전원으로만 켜면 4.3B 화면이 깨진다. 동작 확인은 9V(1A 이상) 전원으로 한다.
 - 보드 USB-C는 하나뿐이고 평소엔 TONEX One에 연결된다. TONEX One과 연결된 상태에서는 시리얼 로그를 볼 수 없으므로, 디버그 정보는 화면(토스트/라벨/Setup 화면 Info 탭)이나 웹에 띄운다.
 

@@ -1,4 +1,4 @@
-# fork: WS43B_FORK 빌드와 설치 파일 묶음. 업스트림 ci.yaml(전 플랫폼 빌드)과 별개로 돈다.
+# fork: WS43B_FORK 빌드와 설치 파일 묶음, main이면 웹 설치 페이지(GitHub Pages) 배포. 업스트림 ci.yaml(전 플랫폼 빌드)과 별개로 돈다.
 name: Fork WS43B build
 
 on:
@@ -36,6 +36,7 @@ jobs:
           # flat folder: keep offsets, drop directories from the file names
           python3 tools/flatten_flasher_args.py "$B/flasher_args.json" out/usb/flasher_args.json
           cp "$B/TonexController.bin" out/ota/
+          python3 tools/web_installer/build_site.py "$B" out/site
 
       - name: Upload USB install package
         uses: actions/upload-artifact@v4
@@ -50,3 +51,28 @@ jobs:
           name: ws43b-fork-wifi-update
           path: out/ota
           if-no-files-found: error
+
+      - name: Upload web installer (GitHub Pages)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: out/site
+
+  deploy-pages:
+    # github-pages 환경의 기본 규칙이 기본 브랜치(main)만 배포를 허용한다.
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
