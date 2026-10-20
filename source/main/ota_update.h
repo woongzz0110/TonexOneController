@@ -25,5 +25,7 @@ limitations under the License.
 // OTA 파티션 표(partitions_16MB_ota.csv)로 빌드한 이미지에서만 동작한다(CONFIG_TONEX_FORK_OTA_UPDATE).
 
 uint8_t ota_update_is_available(void);
+// 직전 업데이트로 켜진 뒤 아직 확정 전이면 1. 이 동안에는 새 업로드를 받을 수 없다.
+uint8_t ota_update_is_pending_verify(void);
 const char* ota_update_platform_id(void);
 esp_err_t ota_update_register(httpd_handle_t server);

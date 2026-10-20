@@ -61,6 +61,10 @@
     let maxPresets = 20;
     let otaMaxSize = 0;
     let otaPlatform = '';
+    let otaAvailable = false;
+    let otaPending = false;
+    let uploading = false;
+    let pendingTimer = null;
     let menuAdded = false;
     const highlightTimers = {};
 
@@ -224,7 +228,7 @@
         }
     }
 
-    // upstream rebuilds the menu on every GETMODELLERDATA, so add our items each time
+    // 업스트림이 GETMODELLERDATA마다 메뉴를 다시 만들므로 매번 덧붙인다
     function addMenuItems() {
         const toggles = document.querySelectorAll('#nav-items-list .dropdown-toggle');
         let configMenu = null;
@@ -372,7 +376,8 @@
                 document.getElementById('fork_note').textContent = `${CHOC_BUTTONS[index].name}: 프리셋 번호는 1 ~ ${maxPresets} 입니다.`;
                 return;
             }
-            if (isNaN(preset) || preset < 1) {
+            // 숨겨진 칸에 남은 값 때문에 저장 전체가 거절되지 않게 한다(보드는 1 ~ 150만 받는다)
+            if (isNaN(preset) || preset < 1 || (action !== CHOC_ACTION_PRESET_SELECT && preset > maxPresets)) {
                 preset = 1;
             }
 
@@ -399,18 +404,32 @@
 
     // ------------------------------------------------------------------ firmware
 
+    function updateUploadButton() {
+        document.getElementById('fork_fw_upload').disabled = uploading || !otaAvailable || otaPending;
+    }
+
     function applyFirmwareInfo(data) {
         otaMaxSize = data['MAX_SIZE'] || 0;
         otaPlatform = data['PLATFORM'] || '';
+        otaAvailable = !!data['OTA'];
+        otaPending = otaAvailable && !!data['PENDING'];
 
         let text = `${data['PROJECT']} ${data['VERSION']} (빌드 ${data['BUILD_DATE']} ${data['BUILD_TIME']}, IDF ${data['IDF']}), 실행 중 슬롯 ${data['RUNNING']}`;
-        if (data['OTA']) {
+        if (otaPending) {
+            text += ' — 방금 업데이트한 펌웨어가 확정되기를 기다리는 중입니다(켜진 뒤 30초). 확정되면 업로드할 수 있습니다.';
+        } else if (otaAvailable) {
             text += `, Wi-Fi 업데이트 가능 (${data['PLATFORM']}, 최대 ${Math.floor(otaMaxSize / 1024)} KB)`;
         } else {
             text += ' — 이 펌웨어는 Wi-Fi 업데이트를 지원하지 않습니다. USB로 WS43B_FORK 빌드를 먼저 설치하세요.';
         }
         document.getElementById('fork_fw_info').textContent = text;
-        document.getElementById('fork_fw_upload').disabled = !data['OTA'];
+        updateUploadButton();
+
+        // 확정되면 버튼이 저절로 풀리도록 다시 묻는다
+        clearTimeout(pendingTimer);
+        if (otaPending) {
+            pendingTimer = setTimeout(() => sendWS({ CMD: 'GETFWINFO' }), 5000);
+        }
     }
 
     function setProgress(percent) {
@@ -453,10 +472,18 @@
         return null;
     }
 
+    function finishUpload() {
+        uploading = false;
+        updateUploadButton();
+    }
+
     async function uploadFirmware() {
         const file = document.getElementById('fork_fw_file').files[0];
         const note = document.getElementById('fork_fw_note');
 
+        if (uploading) {
+            return;
+        }
         if (!file) {
             note.textContent = 'TonexController.bin 파일을 고르세요.';
             return;
@@ -466,14 +493,24 @@
             return;
         }
 
-        const problem = await checkImage(file);
+        // 이미지를 읽는 동안 다시 눌러 업로드가 두 번 나가지 않게, 기다리기 전에 막는다
+        uploading = true;
+        updateUploadButton();
+        note.textContent = '이미지 확인 중…';
+
+        let problem;
+        try {
+            problem = await checkImage(file);
+        } catch (e) {
+            problem = '파일을 읽지 못했습니다. 파일을 다시 고르세요.';
+        }
         if (problem) {
             note.textContent = problem;
+            finishUpload();
             return;
         }
 
         const request = new XMLHttpRequest();
-        document.getElementById('fork_fw_upload').disabled = true;
         note.textContent = '업로드 중… 끝날 때까지 이 화면을 닫지 마세요.';
         setProgress(0);
 
@@ -488,12 +525,13 @@
                 note.textContent = '완료. 보드가 재부팅합니다. 약 20초 뒤 다시 연결됩니다(AP 모드는 Wi-Fi 재연결 필요).';
             } else {
                 note.textContent = '실패: ' + request.responseText;
-                document.getElementById('fork_fw_upload').disabled = false;
+                finishUpload();
             }
         };
         request.onerror = () => {
-            note.textContent = '업로드 중 연결이 끊겼습니다(Wi-Fi 끊김이거나 보드가 이미지를 거절함). 보드는 기존 펌웨어로 계속 동작합니다.';
-            document.getElementById('fork_fw_upload').disabled = false;
+            note.textContent = '업로드 중 연결이 끊겼습니다(Wi-Fi 끊김이거나 보드가 이미지를 거절함). 보드는 기존 펌웨어로 계속 동작합니다. ' +
+                '업데이트 직후(켜진 뒤 30초 이내)였다면 잠시 뒤 다시 올리세요.';
+            finishUpload();
         };
 
         request.open('POST', '/update');

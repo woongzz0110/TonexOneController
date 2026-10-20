@@ -31,7 +31,7 @@ limitations under the License.
 #define NVS_KEY_CHOC                "chocconf"
 
 #define SAVE_DELAY_MSEC             1000
-#define SAVE_TASK_STACK_SIZE        (3 * 1024)
+#define SAVE_TASK_STACK_SIZE        (4 * 1024)
 #define SAVE_TASK_PRIORITY          (tskIDLE_PRIORITY + 1)
 #define SAVE_BOOST                  0x01
 #define SAVE_CHOC                   0x02
@@ -179,7 +179,7 @@ static void notify_changed(uint8_t boost_changed)
 }
 
 /****************************************************************************
-* NOTES:       call after nvs_flash_init()
+* NOTES:       nvs_flash_init() 뒤에 부른다
 *****************************************************************************/
 void fork_settings_load(void)
 {
@@ -230,9 +230,11 @@ void fork_settings_load(void)
     memcpy((void*)&ChocConfig, (void*)&choc, sizeof(choc));
     portEXIT_CRITICAL(&SettingsLock);
 
-    if (SaveTask == NULL)
+    if ((SaveTask == NULL) && (xTaskCreate(save_task, "ForkSave", SAVE_TASK_STACK_SIZE, NULL, SAVE_TASK_PRIORITY, &SaveTask) != pdPASS))
     {
-        xTaskCreate(save_task, "ForkSave", SAVE_TASK_STACK_SIZE, NULL, SAVE_TASK_PRIORITY, &SaveTask);
+        // 이후 변경은 메모리에만 반영되고 재부팅하면 사라진다
+        SaveTask = NULL;
+        ESP_LOGE(TAG, "Failed to create save task");
     }
 
     ESP_LOGI(TAG, "boost off %d on %d boot_off %d, choc translate %d", (int)boost.OffDb10, (int)boost.OnDb10, (int)boost.OffAtBoot, (int)choc.TranslateEnable);
@@ -269,7 +271,7 @@ static void prepare_choc(const tChocConfig* config, tChocConfig* out)
 }
 
 /****************************************************************************
-* RETURN:      BOOST_CONFIG_OK, or the reason it was rejected
+* RETURN:      BOOST_CONFIG_OK, 아니면 거절 사유
 *****************************************************************************/
 uint8_t fork_settings_set_boost(const tBoostConfig* config)
 {
@@ -307,7 +309,7 @@ void fork_settings_set_choc(const tChocConfig* config)
 }
 
 /****************************************************************************
-* RETURN:      BOOST_CONFIG_OK, or the reason the boost values were rejected
+* RETURN:      BOOST_CONFIG_OK, 아니면 부스트 값을 거절한 사유 (이때는 둘 다 바꾸지 않는다)
 *****************************************************************************/
 uint8_t fork_settings_set_all(const tBoostConfig* boost_config, const tChocConfig* choc_config)
 {

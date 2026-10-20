@@ -57,12 +57,17 @@ typedef struct
     tOtaTagScan tag;
 } tOtaScan;
 
-static void confirm_timer_cb(void* arg)
+static uint8_t running_is_pending_verify(void)
 {
     esp_ota_img_states_t state;
     const esp_partition_t* running = esp_ota_get_running_partition();
 
-    if ((running != NULL) && (esp_ota_get_state_partition(running, &state) == ESP_OK) && (state == ESP_OTA_IMG_PENDING_VERIFY))
+    return (running != NULL) && (esp_ota_get_state_partition(running, &state) == ESP_OK) && (state == ESP_OTA_IMG_PENDING_VERIFY);
+}
+
+static void confirm_timer_cb(void* arg)
+{
+    if (running_is_pending_verify())
     {
         ESP_LOGI(TAG, "New firmware confirmed");
         esp_ota_mark_app_valid_cancel_rollback();
@@ -75,7 +80,7 @@ static void restart_timer_cb(void* arg)
 }
 
 /****************************************************************************
-* RETURN:      NULL if OK, else the reason
+* RETURN:      통과하면 NULL, 아니면 거절 사유
 *****************************************************************************/
 static const char* check_header(const uint8_t* data)
 {
@@ -311,6 +316,11 @@ uint8_t ota_update_is_available(void)
     return esp_ota_get_next_update_partition(NULL) != NULL;
 }
 
+uint8_t ota_update_is_pending_verify(void)
+{
+    return running_is_pending_verify();
+}
+
 const char* ota_update_platform_id(void)
 {
     return CONFIG_TONEX_FORK_OTA_PLATFORM_ID;
@@ -319,6 +329,11 @@ const char* ota_update_platform_id(void)
 #else   //CONFIG_TONEX_FORK_OTA_UPDATE
 
 uint8_t ota_update_is_available(void)
+{
+    return 0;
+}
+
+uint8_t ota_update_is_pending_verify(void)
 {
     return 0;
 }

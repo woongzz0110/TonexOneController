@@ -140,6 +140,7 @@ static void build_firmware_info_json(char* buffer, size_t size)
     json_gen_obj_set_string(&jstr, "IDF", app->idf_ver);
     json_gen_obj_set_string(&jstr, "RUNNING", (running != NULL) ? running->label : "?");
     json_gen_obj_set_int(&jstr, "OTA", ota_update_is_available());
+    json_gen_obj_set_int(&jstr, "PENDING", ota_update_is_pending_verify());
     json_gen_obj_set_string(&jstr, "PLATFORM", ota_update_platform_id());
     json_gen_obj_set_int(&jstr, "MAX_SIZE", (next != NULL) ? (int)next->size : 0);
     json_gen_end_object(&jstr);
@@ -203,7 +204,7 @@ static int boost_result_code(uint8_t result)
     }
 }
 
-// 정수 범위 밖이면 저장 형식(uint8_t·int16_t)으로 줄이기 전에 거절한다(줄이면 다른 정상 값이 되어 검사를 통과한다)
+// 범위 밖 값은 int16_t로 줄이기 전에 거절한다(줄이면 다른 정상 값이 되어 검사를 통과한다)
 static uint8_t read_db10(jparse_ctx_t* jctx, const char* key, int16_t* value)
 {
     float db;
@@ -366,7 +367,7 @@ void wifi_fork_handle_ws_command(httpd_req_t* req, jparse_ctx_t* jctx, const cha
 }
 
 /****************************************************************************
-* RETURN:      JSON to broadcast, or NULL
+* RETURN:      모든 연결에 보낼 JSON, 보낼 것이 없으면 NULL
 * NOTES:       wifi 태스크에서 돈다
 *****************************************************************************/
 const char* wifi_fork_build_push(uint8_t type, uint16_t value)

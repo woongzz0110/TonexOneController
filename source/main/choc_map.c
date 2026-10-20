@@ -248,7 +248,7 @@ void choc_config_set_default(tChocConfig* config)
 }
 
 /****************************************************************************
-* RETURN:      1 if any field was corrected
+* RETURN:      고친 칸이 있으면 1
 * NOTES:       Version은 건드리지 않는다: 새 펌웨어가 쓴 설정을 읽었을 때 그 표시를 지우지 않으려고
 *****************************************************************************/
 uint8_t choc_config_sanitize(tChocConfig* config)

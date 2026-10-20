@@ -25,7 +25,7 @@ static uint8_t DecimateTapsReady = 0;
 
 /****************************************************************************
 * PARAMETERS:  work: 2 * (tau_max + 2)개 이상의 float (CMND와 차이 함수를 같이 담는다)
-* RETURN:      0 if OK
+* RETURN:      성공하면 0
 *****************************************************************************/
 int pitch_yin_init(tPitchYin* yin, float sample_rate, uint16_t window, float min_freq, float max_freq, float threshold, float* work, size_t work_length)
 {

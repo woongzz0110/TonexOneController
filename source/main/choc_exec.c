@@ -207,7 +207,7 @@ void choc_exec_run_button(uint8_t button)
 }
 
 /****************************************************************************
-* RETURN:      1 if handled here (must not go to midi_helper)
+* RETURN:      여기서 처리했으면 1 (그 신호는 midi_helper로 넘기면 안 된다)
 * NOTES:       Bluetooth 콜백 태스크에서 돈다
 *****************************************************************************/
 uint8_t choc_exec_handle_ble_midi(const uint8_t* data, uint16_t length)

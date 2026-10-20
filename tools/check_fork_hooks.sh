@@ -38,12 +38,22 @@ check $M/wifi_config.c          'void wifi_request_fork_push('
 check $M/wifi_config.c          'WIFI_FORK_URI_HANDLERS'
 check $M/web/index.html         'src="fork.js"'
 
-# 스킨 파티션은 업스트림(10M)보다 작다(OTA 슬롯 2개 때문에). 업스트림이 스킨을 키우면 여기서 걸린다.
+# 스킨 파티션은 업스트림(10M)보다 작다(OTA 슬롯 2개 때문에). 업스트림이 스킨을 키우거나 옮기면 여기서 걸린다.
+# 스킨 파일 경로는 업스트림 source/CMakeLists.txt의 WAVESHARE_43B 분기에서 읽는다.
+skins_rel=$(awk '/if\(.*WAVESHARE_43B[ )]/ {found = 1; next} found && /set\(image_file/ {sub(/.*\$\{project_dir\}\//, ""); sub(/\).*/, ""); print; exit}' source/CMakeLists.txt)
 skins_part=$(awk -F, '$1 ~ /^skins/ {gsub(/ /, "", $5); print $5}' source/partitions_16MB_ota.csv)
-skins_file=$(wc -c < source/skin_images/16bit/skins.bin | tr -d ' ')
-if [ -z "$skins_part" ] || [ "$skins_file" -gt $((skins_part)) ]; then
-    echo "SKINS    source/skin_images/16bit/skins.bin ($skins_file bytes) does not fit the skins partition ($skins_part) in partitions_16MB_ota.csv"
+if [ -z "$skins_rel" ] || [ ! -f "source/$skins_rel" ]; then
+    echo "SKINS    cannot find the WS43B skins image (source/CMakeLists.txt says '$skins_rel')"
     missing=$((missing + 1))
+elif [ -z "$skins_part" ]; then
+    echo "SKINS    no skins partition in source/partitions_16MB_ota.csv"
+    missing=$((missing + 1))
+else
+    skins_file=$(wc -c < "source/$skins_rel" | tr -d ' ')
+    if [ "$skins_file" -gt $((skins_part)) ]; then
+        echo "SKINS    source/$skins_rel ($skins_file bytes) does not fit the skins partition ($skins_part) in partitions_16MB_ota.csv"
+        missing=$((missing + 1))
+    fi
 fi
 
 if [ "$missing" -ne 0 ]; then

@@ -27,7 +27,7 @@ void boost_config_set_default(tBoostConfig* config)
 }
 
 /****************************************************************************
-* RETURN:      BOOST_CONFIG_OK or one of BoostConfigErrors
+* RETURN:      BOOST_CONFIG_OK, 아니면 BoostConfigErrors 중 하나
 *****************************************************************************/
 uint8_t boost_config_check(const tBoostConfig* config)
 {
